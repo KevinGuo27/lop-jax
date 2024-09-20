@@ -201,7 +201,7 @@ if __name__ == "__main__":
     all_results = {
         'train_state': train_states,
         'metric': metrics,
-        'args': args.as_dict()
+        'args': dict_args
     }
 
     results_path = get_results_path(args, return_npy=False)  # returns a results directory
