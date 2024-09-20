@@ -5,8 +5,10 @@ from tap import Tap
 
 
 class Hyperparams(Tap):
-
     study_name: str = 'test'
+    seed: int = 2024
+    debug: bool = False
+    platform: Literal['cpu', 'gpu'] = 'cpu'
 
     def id_str(self):
         raise NotImplementedError
@@ -29,9 +31,9 @@ class PolicyHyperparams(Hyperparams):
     steps_log_freq: int = 128
     updates_log_freq: int = 100
 
-    seed: int = 2024
-    debug: bool = False
-    platform: Literal['cpu', 'gpu'] = 'cpu'
-
     def id_str(self):
         return f"{self.env}_seed({self.seed})"
+
+
+class PolicyEvalHyperparams(Hyperparams):
+    checkpoint_path: str

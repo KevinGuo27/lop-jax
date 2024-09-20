@@ -60,7 +60,7 @@ def make_train(rng: chex.PRNGKey):
     updates_filter = partial(filter_period_first_dim, n=args.updates_log_freq)
 
     def train(rng):
-        train_state = TrainState.create(
+        init_train_state = TrainState.create(
             apply_fn=network.apply,
             params=network_params,
             tx=tx,
@@ -153,7 +153,7 @@ def make_train(rng: chex.PRNGKey):
 
         rng, _rng = jax.random.split(rng)
         runner_state = (
-            train_state,
+            init_train_state,
             env_state,
             obsv,
             jnp.zeros((args.num_envs), dtype=bool),
@@ -168,7 +168,7 @@ def make_train(rng: chex.PRNGKey):
         final_train_state = runner_state[0]
         metric = jax.tree.map(updates_filter, metric)  # update_steps x (args.num_steps // args.steps_log_freq) x num_envs
 
-        return final_train_state, metric
+        return init_train_state, final_train_state, metric
 
     return train
 
@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
     vmapped_train_fn = jax.vmap(jitted_train_fn)
 
-    train_states, metrics = vmapped_train_fn(train_rngs)
+    init_train_states, final_train_states, metrics = vmapped_train_fn(train_rngs)
 
     # remove methods from args
     dict_args = args.as_dict()
@@ -199,7 +199,8 @@ if __name__ == "__main__":
             del dict_args[k]
 
     all_results = {
-        'train_state': train_states,
+        'init_train_state': init_train_states,
+        'final_train_state': final_train_states,
         'metric': metrics,
         'args': dict_args
     }
