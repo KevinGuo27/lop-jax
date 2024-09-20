@@ -194,8 +194,8 @@ if __name__ == "__main__":
 
     # remove methods from args
     dict_args = args.as_dict()
-    for k, v in dict_args.items():
-        if inspect.ismethod(v):
+    for k in list(dict_args.keys()):
+        if inspect.ismethod(dict_args[k]):
             del dict_args[k]
 
     all_results = {
