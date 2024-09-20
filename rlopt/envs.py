@@ -1,0 +1,93 @@
+from typing import Optional, Tuple, Union
+from functools import partial
+
+import chex
+from flax import struct
+import jax
+from gymnax.environments import environment, spaces
+
+
+class GymnaxWrapper:
+    """Base class for Gymnax wrappers."""
+
+    def __init__(self, env):
+        self._env = env
+        if hasattr(env, '_unwrapped'):
+            self._unwrapped = env._unwrapped
+        else:
+            self._unwrapped = env
+
+    # provide proxy access to regular attributes of wrapped object
+    def __getattr__(self, name):
+        return getattr(self._env, name)
+
+
+class VecEnv(GymnaxWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.reset = jax.vmap(self._env.reset, in_axes=(0, None))
+        self.step = jax.vmap(self._env.step, in_axes=(0, 0, 0, None))
+
+
+@struct.dataclass
+class LogEnvState:
+    env_state: environment.EnvState
+    episode_returns: float
+    discounted_episode_returns: float
+    episode_lengths: int
+    returned_episode_returns: float
+    returned_discounted_episode_returns: float
+    returned_episode_lengths: int
+    timestep: int
+
+
+class LogWrapper(GymnaxWrapper):
+    """Log the episode returns and lengths."""
+
+    def __init__(self, env: environment.Environment, gamma: float = 0.99):
+        super().__init__(env)
+        self.gamma = gamma
+
+    @partial(jax.jit, static_argnums=(0, -1))
+    def reset(
+            self, key: chex.PRNGKey, params: Optional[environment.EnvParams] = None
+    ) -> Tuple[chex.Array, environment.EnvState]:
+        obs, env_state = self._env.reset(key, params)
+        state = LogEnvState(env_state, 0, 0, 0, 0, 0, 0, 0)
+        return obs, state
+
+    @partial(jax.jit, static_argnums=(0, -1))
+    def step(
+            self,
+            key: chex.PRNGKey,
+            state: environment.EnvState,
+            action: Union[int, float],
+            params: Optional[environment.EnvParams] = None,
+    ) -> Tuple[chex.Array, environment.EnvState, float, bool, dict]:
+        obs, env_state, reward, done, info = self._env.step(
+            key, state.env_state, action, params
+        )
+        new_episode_return = state.episode_returns + reward
+        new_discounted_episode_return = state.discounted_episode_returns + (self.gamma ** state.episode_lengths) * reward
+        new_episode_length = state.episode_lengths + 1
+        # TODO: add discounted_episode_returns here.
+        state = LogEnvState(
+            env_state=env_state,
+            episode_returns=new_episode_return * (1 - done),
+            discounted_episode_returns=new_discounted_episode_return * (1 - done),
+            episode_lengths=new_episode_length * (1 - done),
+            returned_episode_returns=state.returned_episode_returns * (1 - done)
+                                     + new_episode_return * done,
+            returned_discounted_episode_returns=state.returned_discounted_episode_returns * (1 - done)
+                                                + new_discounted_episode_return * done,
+            returned_episode_lengths=state.returned_episode_lengths * (1 - done)
+                                     + new_episode_length * done,
+            timestep=state.timestep + 1,
+        )
+        info["returned_episode_returns"] = state.returned_episode_returns
+        info["returned_discounted_episode_returns"] = state.returned_discounted_episode_returns
+        info["returned_episode_lengths"] = state.returned_episode_lengths
+        info["timestep"] = state.timestep
+        info["returned_episode"] = done
+        info["reward"] = reward
+        return obs, state, reward, done, info
