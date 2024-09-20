@@ -1,19 +1,29 @@
 """
 Trains a set of parameters with n different seeds.
 """
+import inspect
 from functools import partial
 
 import chex
 from flax.training.train_state import TrainState
+from flax.training import orbax_utils
 import gymnax
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
+import orbax.checkpoint
 
 from rlopt.actor_critic import ActorCriticAgent, Transition, compute_n_step_returns
 from rlopt.config import PolicyHyperparams
 from rlopt.envs import LogWrapper, VecEnv
 from rlopt.models import Actor, ActorCritic
+from rlopt.file_system import get_results_path
+
+
+def filter_period_first_dim(x, n: int):
+    if isinstance(x, jnp.ndarray) or isinstance(x, np.ndarray):
+        return x[::n]
 
 
 def make_train(rng: chex.PRNGKey):
@@ -45,6 +55,9 @@ def make_train(rng: chex.PRNGKey):
 
     # TODO: what optimizer do we use?
     tx = optax.adam(learning_rate=args.lr)
+
+    steps_filter = partial(filter_period_first_dim, n=args.steps_log_freq)
+    updates_filter = partial(filter_period_first_dim, n=args.updates_log_freq)
 
     def train(rng):
         train_state = TrainState.create(
@@ -114,7 +127,7 @@ def make_train(rng: chex.PRNGKey):
 
             # save metrics only every steps_log_freq
             metric = traj_batch.info
-            # metric = jax.tree.map(steps_filter, metric)
+            metric = jax.tree.map(steps_filter, metric)
 
             if args.debug:
 
@@ -136,7 +149,7 @@ def make_train(rng: chex.PRNGKey):
 
                 jax.debug.callback(callback, metric)
 
-            return runner_state, total_loss
+            return runner_state, metric
 
         rng, _rng = jax.random.split(rng)
         runner_state = (
@@ -152,7 +165,10 @@ def make_train(rng: chex.PRNGKey):
             _update_step, runner_state, jnp.arange(num_updates), num_updates
         )
 
-        pass
+        final_train_state = runner_state[0]
+        metric = jax.tree.map(updates_filter, metric)  # update_steps x (args.num_steps // args.steps_log_freq) x num_envs
+
+        return final_train_state, metric
 
     return train
 
@@ -166,9 +182,36 @@ if __name__ == "__main__":
     rng, make_train_rng = jax.random.split(rng)
 
     train_fn = make_train(make_train_rng)
-    # TODO: vmap train_fn with args.n_param_sets number of rngs
+    jitted_train_fn = jax.jit(train_fn)
 
-    train_fn(rng)
+    # now we vmap rng over n_param_sets
+    rng, train_rng = jax.random.split(rng)
+    train_rngs = jax.random.split(train_rng, args.n_param_sets)
 
+    vmapped_train_fn = jax.vmap(jitted_train_fn)
 
+    train_states, metrics = vmapped_train_fn(train_rngs)
+
+    # remove methods from args
+    dict_args = args.as_dict()
+    for k, v in dict_args.items():
+        if inspect.ismethod(v):
+            del dict_args[k]
+
+    all_results = {
+        'train_state': train_states,
+        'metric': metrics,
+        'args': args.as_dict()
+    }
+
+    results_path = get_results_path(args, return_npy=False)  # returns a results directory
+
+    # Save all results with Orbax
+    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+    save_args = orbax_utils.save_args_from_target(all_results)
+
+    print(f"Saving results to {results_path}")
+    orbax_checkpointer.save(results_path, all_results, save_args=save_args)
+
+    print("Done.")
 

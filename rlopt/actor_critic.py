@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from rlopt.config import PolicyHyperparams
+from rlopt.utils import l2_regularization
 
 
 class Transition(NamedTuple):
@@ -51,6 +52,7 @@ def calculate_gae(traj_batch, last_val, last_done, gae_lambda, gamma: float):
 class ActorCriticAgent:
     def __init__(self, network, args: PolicyHyperparams):
         self.value_loss_weight = args.value_loss_weight
+        self.l2_reg_coeff = args.l2_reg_coeff
         self.network = network
 
     def act(self, rng: chex.PRNGKey, ts: TrainState, obs: jnp.ndarray):
@@ -78,6 +80,10 @@ class ActorCriticAgent:
         actor_loss = -jnp.mean(log_prob * returns)
 
         total_loss = self.value_loss_weight * value_loss + actor_loss
+
+        if self.l2_reg_coeff > 0.:
+            total_loss += l2_regularization(params, alpha=self.l2_reg_coeff)
+
         return total_loss, {'actor_loss': actor_loss, 'value_loss': value_loss}
 
 
