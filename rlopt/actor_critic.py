@@ -55,9 +55,9 @@ class ActorCriticAgent:
         self.l2_reg_coeff = args.l2_reg_coeff
         self.network = network
 
-    def act(self, rng: chex.PRNGKey, ts: TrainState, obs: jnp.ndarray):
+    def act(self, rng: chex.PRNGKey, params: dict, obs: jnp.ndarray):
         obs = obs[None, :]
-        pi, value = self.network.apply(ts.params, obs)
+        pi, value = self.network.apply(params, obs)
         action = pi.sample(seed=rng)
 
         log_prob = pi.log_prob(action)

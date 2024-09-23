@@ -74,7 +74,7 @@ def make_train(rng: chex.PRNGKey):
         def _env_step(runner_state, unused):
             train_state, env_state, last_obs, last_done, rng = runner_state
             rng, _rng = jax.random.split(rng)
-            value, action, log_prob = agent.act(_rng, train_state, last_obs)
+            value, action, log_prob = agent.act(_rng, train_state.params, last_obs)
 
             # STEP ENV
             rng, _rng = jax.random.split(rng)

@@ -17,13 +17,13 @@ class Hyperparams(Tap):
 class PolicyHyperparams(Hyperparams):
     env: str = 'CartPole-v1'
     alg: Literal['actor_critic'] = 'actor_critic'
-    lr: float = 5e-5
+    lr: float = 1e-4
     value_loss_weight: float = 0.
     hidden_size: int = 32
     l2_reg_coeff: float = 0.  # Do we use L2 regularization?
 
     gamma: float = 0.95
-    num_steps: int = 512  # How many steps in our n-step returns?
+    num_steps: int = 1000  # How many steps in our n-step returns?
 
     total_steps: int = int(5e7)
     num_envs: int = 4
@@ -37,3 +37,7 @@ class PolicyHyperparams(Hyperparams):
 
 class PolicyEvalHyperparams(Hyperparams):
     checkpoint_path: str
+    n_episodes: int = 1000
+    n_bins: int = 100
+    episodes_per_batch: int = 50
+    max_episode_steps: int = 500
