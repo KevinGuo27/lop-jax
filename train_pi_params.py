@@ -1,13 +1,14 @@
 """
 Trains a set of parameters with n different seeds.
 """
-import inspect
 from functools import partial
+import inspect
+from pathlib import Path
+from typing import Union
 
 import chex
 from flax.training.train_state import TrainState
 from flax.training import orbax_utils
-import gymnax
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -15,8 +16,8 @@ import optax
 import orbax.checkpoint
 
 from rlopt.actor_critic import ActorCriticAgent, Transition, compute_n_step_returns
+from rlopt.envs import load_env
 from rlopt.config import PolicyHyperparams
-from rlopt.envs import LogWrapper, VecEnv
 from rlopt.models import Actor, ActorCritic
 from rlopt.file_system import get_results_path
 
@@ -26,7 +27,7 @@ def filter_period_first_dim(x, n: int):
         return x[::n]
 
 
-def make_train(rng: chex.PRNGKey):
+def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
     """
     Make the training function. Namely, initialize the parameters we'll
     be optimizing.
@@ -35,15 +36,9 @@ def make_train(rng: chex.PRNGKey):
             args.total_steps // args.num_steps // args.num_envs
     )
 
-    env, env_params = gymnax.make(args.env)
-    env = LogWrapper(env, gamma=args.gamma)
+    env, env_params = load_env(args.env, gamma=args.gamma)
 
-    # Vectorize our environment
-    env = VecEnv(env)
-
-    # TODO: refactor this to allow continuous actions
-    # network = Actor(env.action_space(env_params).n, hidden_size=args.hidden_size)
-    network = ActorCritic(env.action_space(env_params).n, hidden_size=args.hidden_size)
+    network = ActorCritic(env.action_space(env_params), hidden_size=args.hidden_size)
 
     agent = ActorCriticAgent(network, args)
 
@@ -132,20 +127,17 @@ def make_train(rng: chex.PRNGKey):
             if args.debug:
 
                 def callback(info):
-                    timesteps = (
-                            info["timestep"][info["returned_episode"]] * args.num_envs
+                    # avg_return_values = jnp.mean(info["returned_episode_returns"][info["returned_episode"]])
+                    # jax.debug.print(
+                    #     "timesteps={} - {}, avg episodic return={:.2f}, actor_loss: {}, critic_loss: {}",
+                    #     timesteps[0], timesteps[-1], avg_return_values,
+                    #     total_loss[1]['actor_loss'], total_loss[1]['value_loss']
+                    # )
+                    avg_return_values = jnp.mean(info["returned_episode_returns"])
+                    jax.debug.print(
+                        "timesteps={} - {}, avg episodic return={:.2f}",
+                        info['timestep'].min(), info['timestep'].max(), avg_return_values
                     )
-                    avg_return_values = jnp.mean(info["returned_episode_returns"][info["returned_episode"]])
-                    if len(timesteps) > 0:
-                        # jax.debug.print(
-                        #     "timesteps={} - {}, avg episodic return={:.2f}, actor_loss: {}, critic_loss: {}",
-                        #     timesteps[0], timesteps[-1], avg_return_values,
-                        #     total_loss[1]['actor_loss'], total_loss[1]['value_loss']
-                        # )
-                        jax.debug.print(
-                            "timesteps={} - {}, avg episodic return={:.2f}",
-                            timesteps[0], timesteps[-1], avg_return_values
-                        )
 
                 jax.debug.callback(callback, metric)
 
@@ -173,15 +165,22 @@ def make_train(rng: chex.PRNGKey):
     return train
 
 
-if __name__ == "__main__":
+def run_train(passed_in_args: Union[dict, PolicyHyperparams] = None) -> Path:
     # jax.disable_jit(True)
-    args = PolicyHyperparams().parse_args()
+    ph = PolicyHyperparams()
+    if isinstance(passed_in_args, PolicyHyperparams):
+        args = passed_in_args
+    elif passed_in_args is not None:
+        args = ph.from_dict(passed_in_args)
+    else:
+        args = ph.parse_args()
+
     jax.config.update('jax_platform_name', args.platform)
 
     rng = jax.random.PRNGKey(args.seed)
     rng, make_train_rng = jax.random.split(rng)
 
-    train_fn = make_train(make_train_rng)
+    train_fn = make_train(make_train_rng, args)
     jitted_train_fn = jax.jit(train_fn)
 
     # now we vmap rng over n_param_sets
@@ -215,4 +214,8 @@ if __name__ == "__main__":
     orbax_checkpointer.save(results_path, all_results, save_args=save_args)
 
     print("Done.")
+    return results_path
 
+
+if __name__ == "__main__":
+    run_train()

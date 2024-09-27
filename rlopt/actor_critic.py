@@ -81,8 +81,7 @@ class ActorCriticAgent:
 
         total_loss = self.value_loss_weight * value_loss + actor_loss
 
-        if self.l2_reg_coeff > 0.:
-            total_loss += l2_regularization(params, alpha=self.l2_reg_coeff)
+        total_loss += l2_regularization(params, alpha=self.l2_reg_coeff)
 
         return total_loss, {'actor_loss': actor_loss, 'value_loss': value_loss}
 

@@ -1,25 +1,35 @@
 import distrax
 import flax.linen as nn
+from gymnax.environments.spaces import Box, Discrete, Space
 from jax._src.nn.initializers import orthogonal, constant
 import jax.numpy as jnp
 
 
 class Actor(nn.Module):
     action_dim: int
+    continuous: bool = False
     hidden_size: int = 128
     # TODO: refactor so that we'd also allow for continuous actions
 
     @nn.compact
     def __call__(self, x):
+        activation = nn.relu
+        if self.continuous:
+            activation = nn.tanh
+
         actor_mean = nn.Dense(self.hidden_size, kernel_init=orthogonal(2), bias_init=constant(0.0))(
             x
         )
-        actor_mean = nn.relu(actor_mean)
+        actor_mean = activation(actor_mean)
         actor_mean = nn.Dense(
             self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
         )(actor_mean)
 
-        pi = distrax.Categorical(logits=actor_mean)
+        if self.continuous:
+            actor_logtstd = self.param("log_std", nn.initializers.zeros, (self.action_dim,))
+            pi = distrax.MultivariateNormalDiag(actor_mean, jnp.exp(actor_logtstd))
+        else:
+            pi = distrax.Categorical(logits=actor_mean)
         return pi
 
 
@@ -57,15 +67,32 @@ class SimpleNN(nn.Module):
         return out
 
 
+def is_continuous(space: Space):
+    if isinstance(space, Box):
+        return True
+    elif isinstance(space, Discrete):
+        return False
+    else:
+        raise NotImplementedError
+
+
 class ActorCritic(nn.Module):
-    action_dim: int
+    action_space: Space
     hidden_size: int = 128
+
+    def setup(self) -> None:
+        if isinstance(self.action_space, Box):
+            action_shape = self.action_space.shape
+            assert len(action_shape) == 1, "Can't handle action dim > 1"
+            self.action_dim = action_shape[0]
+        elif isinstance(self.action_space, Discrete):
+            self.action_dim = self.action_space.n
 
     @nn.compact
     def __call__(self, x):
         embedding = SimpleNN(hidden_size=self.hidden_size)(x)
 
-        actor = Actor(self.action_dim, hidden_size=self.hidden_size)
+        actor = Actor(self.action_dim, continuous=is_continuous(self.action_space), hidden_size=self.hidden_size)
         pi = actor(embedding)
 
         critic = Critic(hidden_size=self.hidden_size)

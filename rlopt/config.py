@@ -41,3 +41,6 @@ class PolicyEvalHyperparams(Hyperparams):
     n_bins: int = 100
     episodes_per_batch: int = 50
     max_episode_steps: int = 500
+
+    # CARTPOLE
+    cartpole_gravity_offset: float = 0.

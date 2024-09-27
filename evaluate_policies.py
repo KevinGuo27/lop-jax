@@ -38,7 +38,7 @@ def load_train_state(fpath: Path):
     # Vectorize our environment
     env = VecEnv(env)
 
-    network = ActorCritic(env.action_space(env_params).n, hidden_size=args.hidden_size)
+    network = ActorCritic(env.action_space(env_params), hidden_size=args.hidden_size)
     agent = ActorCriticAgent(network, args)
 
     ts_dict = restored['final_train_state']
@@ -93,9 +93,14 @@ def make_policy_eval(args: PolicyEvalHyperparams):
     return policy_eval, batch_train_state, train_args, env, env_params, info
 
 
-if __name__ == "__main__":
+def run_and_save_pe(passed_in_args: dict = None):
     # jax.disable_jit(True)
-    args = PolicyEvalHyperparams().parse_args()
+    peh = PolicyEvalHyperparams()
+    if passed_in_args is not None:
+        args = peh.from_dict(passed_in_args)
+    else:
+        args = peh.parse_args()
+
     jax.config.update('jax_platform_name', args.platform)
 
     res_dir = Path(args.checkpoint_path)
@@ -161,4 +166,8 @@ if __name__ == "__main__":
     np.save(res_path, res)
     print('Done')
 
+    return res_path
 
+
+if __name__ == "__main__":
+    run_and_save_pe()

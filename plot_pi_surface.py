@@ -29,10 +29,15 @@ colors = {
     'black': '#000000'
 }
 
+
 if __name__ == "__main__":
-    test_dir = Path(ROOT_DIR, 'results', 'test')
-    res_dir_1 = test_dir / 'CartPole-v1_seed(2024)_time(20240921-120623)_7da5238bd1736ccc406ae1851b84d22f_policy_eval_results'
-    res_dir_2 = test_dir / 'CartPole-v1_seed(2024)_time(20240923-072252)_388972e42d810da4b1ee6dacc73e2ee5_policy_eval_results'
+    # test_dir = Path(ROOT_DIR, 'results', 'cartpole')
+    # res_dir_1 = test_dir / 'CartPole-v1_seed(2024)_time(20240923-095942)_91cc50897622a4b99dea8d29b285cd94_policy_eval_results'
+    # res_dir_2 = test_dir / 'CartPole-v1_seed(2024)_time(20240923-100456)_6b30bcefa311f2ecc54a6522c01be8b2_policy_eval_results'
+
+    test_dir = Path(ROOT_DIR, 'results', 'pendulum')
+    res_dir_1 = test_dir / 'Pendulum-v1_seed(2024)_time(20240926-133317)_1325eb0e60d8a7501b67e2544ee1fde1_policy_eval_results'
+    res_dir_2 = test_dir / 'Pendulum-v1_seed(2024)_time(20240926-133829)_2ac03c0fea318234f31061a9584b57c3_policy_eval_results'
     res_infos = [
         (res_dir_1, 'Baseline', 'orange'),
         (res_dir_2, 'L2 Reg', 'green')
@@ -44,6 +49,8 @@ if __name__ == "__main__":
         ax = axes[i]
 
         res = np.load(res_path / 'parsed_results.npy', allow_pickle=True).item()
+        l2_reg_val = res['train_args'].item().l2_reg_coeff
+        title = title + f' ({l2_reg_val})'
 
         taus = res['taus']
 
@@ -60,11 +67,15 @@ if __name__ == "__main__":
 
         ax.fill_between(taus, mean_disc_returns - sem_disc_returns, mean_disc_returns + sem_disc_returns,
                         color=colors[color], alpha=0.35)
-        ax.set_ylim([19.7, 20.01])
+        # ax.set_ylim([19.5, 20.01])
+        ax.set_ylim([-86, -72])
         ax.set_title(title)
+
         if i == 0:
             ax.set_ylabel('Discounted Return')
         ax.set_xlabel('tau')
+
+        # TODO: plot returns on top of deez
     plt.show()
 
 
