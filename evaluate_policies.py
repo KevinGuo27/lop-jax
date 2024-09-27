@@ -9,7 +9,7 @@ import numpy as np
 import optax
 import orbax.checkpoint
 
-from rlopt.envs import LogWrapper, VecEnv
+from rlopt.envs import load_env
 from rlopt.actor_critic import ActorCriticAgent, Transition
 from rlopt.config import PolicyEvalHyperparams, PolicyHyperparams
 from rlopt.models import Actor, ActorCritic
@@ -32,13 +32,10 @@ def load_train_state(fpath: Path):
     args = restored['args']
     args = PolicyHyperparams().from_dict(args)
 
-    env, env_params = gymnax.make(args.env)
-    env = LogWrapper(env, gamma=args.gamma)
-
-    # Vectorize our environment
-    env = VecEnv(env)
+    env, env_params = load_env(args.env, gamma=args.gamma)
 
     network = ActorCritic(env.action_space(env_params), hidden_size=args.hidden_size)
+
     agent = ActorCriticAgent(network, args)
 
     ts_dict = restored['final_train_state']
