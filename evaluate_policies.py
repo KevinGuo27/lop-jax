@@ -1,18 +1,15 @@
 from pathlib import Path
 
 import chex
-from flax.training.train_state import TrainState
-import gymnax
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 import orbax.checkpoint
 
 from rlopt.envs import load_env
-from rlopt.actor_critic import ActorCriticAgent, Transition
+from rlopt.agents.actor_critic import ActorCriticAgent
 from rlopt.config import PolicyEvalHyperparams, PolicyHyperparams
-from rlopt.models import Actor, ActorCritic
+from rlopt.models import ActorCritic
 
 
 def first_nonzero_element(arr, axis=-1):

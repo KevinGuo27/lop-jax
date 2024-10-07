@@ -16,7 +16,7 @@ class Hyperparams(Tap):
 
 class PolicyHyperparams(Hyperparams):
     env: str = 'CartPole-v1'
-    alg: Literal['actor_critic'] = 'actor_critic'
+    alg: Literal['actor_critic', 'ppo'] = 'actor_critic'
     lr: float = 1e-4
     value_loss_weight: float = 0.
     hidden_size: int = 32
@@ -25,6 +25,14 @@ class PolicyHyperparams(Hyperparams):
     gamma: float = 0.95
     num_steps: int = 1000  # How many steps in our n-step returns?
 
+    # PPO
+    entropy_coeff: float = 0.01
+    clip_eps: float = 0.2
+    max_grad_norm: float = 0.5
+    anneal_lr: bool = True
+    adv_lambda: float = 0.95
+    update_epochs: int = 4
+
     total_steps: int = int(5e7)
     num_envs: int = 4
     n_param_sets: int = 2
@@ -32,7 +40,7 @@ class PolicyHyperparams(Hyperparams):
     updates_log_freq: int = 100
 
     def id_str(self):
-        return f"{self.env}_seed({self.seed})"
+        return f"{self.env}_{self.alg}_seed({self.seed})"
 
 
 class PolicyEvalHyperparams(Hyperparams):

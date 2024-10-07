@@ -35,9 +35,9 @@ if __name__ == "__main__":
     # res_dir_1 = test_dir / 'CartPole-v1_seed(2024)_time(20240923-095942)_91cc50897622a4b99dea8d29b285cd94_policy_eval_results'
     # res_dir_2 = test_dir / 'CartPole-v1_seed(2024)_time(20240923-100456)_6b30bcefa311f2ecc54a6522c01be8b2_policy_eval_results'
 
-    test_dir = Path(ROOT_DIR, 'results', 'pendulum')
-    res_dir_1 = test_dir / 'Pendulum-v1_seed(2024)_time(20240926-133317)_1325eb0e60d8a7501b67e2544ee1fde1_policy_eval_results'
-    res_dir_2 = test_dir / 'Pendulum-v1_seed(2024)_time(20240926-133829)_2ac03c0fea318234f31061a9584b57c3_policy_eval_results'
+    test_dir = Path(ROOT_DIR, 'results', 'ant')
+    res_dir_1 = test_dir / 'ant_seed(2024)_time(20240927-050217)_839c382d193eb2af6573ea4faa63dc4a_policy_eval_results'
+    res_dir_2 = test_dir / 'ant_seed(2024)_time(20240927-164410)_da55c1cbf98ef5681833d1c3d41db8e8_policy_eval_results'
     res_infos = [
         (res_dir_1, 'Baseline', 'orange'),
         (res_dir_2, 'L2 Reg', 'green')
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         ax.fill_between(taus, mean_disc_returns - sem_disc_returns, mean_disc_returns + sem_disc_returns,
                         color=colors[color], alpha=0.35)
         # ax.set_ylim([19.5, 20.01])
-        ax.set_ylim([-86, -72])
+        ax.set_ylim([-1.5, 1.5])
         ax.set_title(title)
 
         if i == 0:

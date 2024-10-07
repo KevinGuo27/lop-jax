@@ -15,10 +15,10 @@ import numpy as np
 import optax
 import orbax.checkpoint
 
-from rlopt.actor_critic import ActorCriticAgent, Transition, compute_n_step_returns
+from rlopt.agents import ActorCriticAgent, PPOAgent, Transition
 from rlopt.envs import load_env
 from rlopt.config import PolicyHyperparams
-from rlopt.models import Actor, ActorCritic
+from rlopt.models import ActorCritic
 from rlopt.file_system import get_results_path
 
 
@@ -40,7 +40,17 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
     network = ActorCritic(env.action_space(env_params), hidden_size=args.hidden_size)
 
+    if args.alg == 'ppo':
+        agent = PPOAgent(network, args)
     agent = ActorCriticAgent(network, args)
+
+    def linear_schedule(count):
+        frac = (
+                1.0
+                - (count // (args.num_envs * args.update_epochs))
+                / num_updates
+        )
+        return args.lr * frac
 
     # INIT NETWORK
     rng, _rng = jax.random.split(rng)
@@ -49,7 +59,16 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
     network_params = network.init(_rng, init_x)
 
     # TODO: what optimizer do we use?
-    tx = optax.adam(learning_rate=args.lr)
+    if args.alg == 'ppo' and args.anneal_lr:
+        tx = optax.chain(
+            optax.clip_by_global_norm(args.max_grad_norm),
+            optax.adam(learning_rate=linear_schedule, eps=1e-5),
+        )
+    else:
+        tx = optax.chain(
+            optax.clip_by_global_norm(args.max_grad_norm),
+            optax.adam(args.lr, eps=1e-5),
+        )
 
     steps_filter = partial(filter_period_first_dim, n=args.steps_log_freq)
     updates_filter = partial(filter_period_first_dim, n=args.updates_log_freq)
@@ -88,13 +107,13 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                 _env_step, runner_state, jnp.arange(args.num_steps), args.num_steps
             )
 
-            train_state, env_state, obsv, done, rng = runner_state
-            _, last_val = network.apply(train_state.params, obsv)
+            train_state, env_state, final_obs, final_done, rng = runner_state
+            _, final_val = network.apply(train_state.params, final_obs)
 
-            # CALCULATE RETURNS
-            vmapped_compute_n_step_returns = jax.vmap(compute_n_step_returns, in_axes=[1, 0, None], out_axes=1)
-            returns = vmapped_compute_n_step_returns(traj_batch, last_val, args.gamma)
-            batch = (returns, traj_batch)
+            # CALCULATE TARGETS
+            vmapped_target_fn = jax.vmap(agent.target, in_axes=[1, 0, 0], out_axes=1)
+            returns, value_targets = vmapped_target_fn(traj_batch, final_val, final_done)
+            batch = (returns, value_targets, traj_batch)
 
             # flatten everything
             def flatten_first_n(arr: jnp.ndarray, n: int):
@@ -102,23 +121,23 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
             flatten_first_two = partial(flatten_first_n, n=2)
 
             flat_batch = jax.tree.map(flatten_first_two, batch)
-            flat_returns, flat_traj = flat_batch
+            flat_returns, flat_value_targets, flat_traj = flat_batch
 
             # now we need to shuffle everything
             rng, _rng = jax.random.split(rng)
-            permutation = jax.random.permutation(_rng, flat_returns.shape[0])
+            permutation = jax.random.permutation(_rng, flat_value_targets.shape[0])
 
-            shuffled_returns, shuffled_traj = jax.tree.map(
+            shuffled_returns, shuffled_value_targets, shuffled_traj = jax.tree.map(
                 lambda x: jnp.take(x, permutation, axis=0), flat_batch
             )
 
             # Now update our params
             grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
             total_loss, grads = grad_fn(
-                train_state.params, shuffled_traj, shuffled_returns
+                train_state.params, shuffled_traj, shuffled_returns, shuffled_value_targets
             )
             train_state = train_state.apply_gradients(grads=grads)
-            runner_state = (train_state, env_state, obsv, done, rng)
+            runner_state = (train_state, env_state, final_obs, final_done, rng)
 
             # save metrics only every steps_log_freq
             metric = traj_batch.info
@@ -127,12 +146,6 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
             if args.debug:
 
                 def callback(info):
-                    # avg_return_values = jnp.mean(info["returned_episode_returns"][info["returned_episode"]])
-                    # jax.debug.print(
-                    #     "timesteps={} - {}, avg episodic return={:.2f}, actor_loss: {}, critic_loss: {}",
-                    #     timesteps[0], timesteps[-1], avg_return_values,
-                    #     total_loss[1]['actor_loss'], total_loss[1]['value_loss']
-                    # )
                     avg_return_values = jnp.mean(info["returned_episode_returns"])
                     jax.debug.print(
                         "timesteps={} - {}, avg episodic return={:.2f}",
