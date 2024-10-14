@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
         ax.plot(taus, mean_disc_returns, color=colors[color])
 
-        ax.fill_between(taus, mean_disc_returns - sem_disc_returns, mean_disc_returns + sem_disc_returns,
+        ax.fill_between(taus, mean_disc_returns -sem_disc_returns, mean_disc_returns + sem_disc_returns,
                         color=colors[color], alpha=0.35)
         # ax.set_ylim([19.5, 20.01])
         ax.set_ylim([-1.5, 1.5])

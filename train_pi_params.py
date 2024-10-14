@@ -42,7 +42,8 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
     if args.alg == 'ppo':
         agent = PPOAgent(network, args)
-    agent = ActorCriticAgent(network, args)
+    else:
+        agent = ActorCriticAgent(network, args)
 
     def linear_schedule(count):
         frac = (

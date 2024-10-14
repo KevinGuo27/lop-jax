@@ -2,7 +2,7 @@
 from rlopt.config import PolicyHyperparams
 
 from train_pi_params import run_train
-from evaluate_policies import run_and_save_pe
+from evaluate_policies import run_and_save_mc_pe
 
 
 if __name__ == "__main__":
@@ -12,7 +12,7 @@ if __name__ == "__main__":
 
     print(f"Train results saved to {train_path}")
 
-    eval_path = run_and_save_pe({
+    eval_path = run_and_save_mc_pe({
         'checkpoint_path': train_path
     })
 

@@ -18,7 +18,7 @@ class PPOAgent(ActorCriticAgent):
 
     def act(self, rng: chex.PRNGKey,
             params: dict,
-            obs: chex.Array, done: chex.Array):
+            obs: chex.Array):
 
         # SELECT ACTION
         ac_in = obs[None, :]

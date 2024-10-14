@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 
 import chex
@@ -7,7 +8,7 @@ import numpy as np
 import orbax.checkpoint
 
 from rlopt.envs import load_env
-from rlopt.agents.actor_critic import ActorCriticAgent
+from rlopt.agents import ActorCriticAgent, PPOAgent
 from rlopt.config import PolicyEvalHyperparams, PolicyHyperparams
 from rlopt.models import ActorCritic
 
@@ -33,29 +34,35 @@ def load_train_state(fpath: Path):
 
     network = ActorCritic(env.action_space(env_params), hidden_size=args.hidden_size)
 
-    agent = ActorCriticAgent(network, args)
+    if args.alg == 'ppo':
+        agent = PPOAgent(network, args)
+    else:
+        agent = ActorCriticAgent(network, args)
 
     ts_dict = restored['final_train_state']
 
     return env, env_params, args, agent, ts_dict['params'], {'metric': restored['metric']}
 
 
+def env_step(runner_state, unused, agent, episodes, env, env_params):
+    network_params, env_state, last_obs, last_done, rng = runner_state
+    rng, _rng = jax.random.split(rng)
+    value, action, log_prob = agent.act(_rng, network_params, last_obs)
+
+    # STEP ENV
+    rng, _rng = jax.random.split(rng)
+    rng_step = jax.random.split(_rng, episodes)
+    obsv, env_state, reward, done, info = env.step(rng_step, env_state, action, env_params)
+    transition = (info, reward, done)
+    runner_state = (network_params, env_state, obsv, done, rng)
+    return runner_state, transition
+
+
 def make_policy_eval(args: PolicyEvalHyperparams):
     n_batches = args.n_episodes // args.episodes_per_batch
     env, env_params, train_args, agent, batch_train_state, info = load_train_state(args.checkpoint_path)
 
-    def _env_step(runner_state, unused):
-        network_params, env_state, last_obs, last_done, rng = runner_state
-        rng, _rng = jax.random.split(rng)
-        value, action, log_prob = agent.act(_rng, network_params, last_obs)
-
-        # STEP ENV
-        rng, _rng = jax.random.split(rng)
-        rng_step = jax.random.split(_rng, args.episodes_per_batch)
-        obsv, env_state, reward, done, info = env.step(rng_step, env_state, action, env_params)
-        transition = (info, reward, done)
-        runner_state = (network_params, env_state, obsv, done, rng)
-        return runner_state, transition
+    _env_step = partial(env_step, agent=agent, episodes=args.episodes_per_batch, env=env, env_params=env_params)
 
     def policy_eval(env_state, obs: jnp.ndarray, rng: chex.PRNGKey, pi_params: dict):
         """
@@ -82,12 +89,15 @@ def make_policy_eval(args: PolicyEvalHyperparams):
             _run_episode, runner_state, jnp.arange(n_batches), n_batches
         )
         steps_last_traj_batch = jax.tree.map(lambda x: jnp.swapaxes(x, -1, -2), traj_batch)
-        return steps_last_traj_batch
+        _, _, last_obs, last_done, _ = runner_state
+        _, last_val = agent.network.apply(pi_params, last_obs)
+        return steps_last_traj_batch, last_val, last_done
 
-    return policy_eval, batch_train_state, train_args, env, env_params, info
+    return policy_eval, batch_train_state, train_args, agent, env, env_params, info
 
 
-def run_and_save_pe(passed_in_args: dict = None):
+def run_and_save_mc_pe(passed_in_args: dict = None,
+                       eval_type: str = 'mc'):
     # jax.disable_jit(True)
     peh = PolicyEvalHyperparams()
     if passed_in_args is not None:
@@ -104,7 +114,7 @@ def run_and_save_pe(passed_in_args: dict = None):
 
     rng = jax.random.PRNGKey(args.seed)
 
-    policy_eval_fn, pi_params, train_args, env, env_params, info = make_policy_eval(args)
+    policy_eval_fn, pi_params, train_args, agent, env, env_params, info = make_policy_eval(args)
 
     pi_params_1 = jax.tree.map(lambda x: x[0], pi_params)
     pi_params_2 = jax.tree.map(lambda x: x[1], pi_params)
@@ -130,7 +140,7 @@ def run_and_save_pe(passed_in_args: dict = None):
     rng, pe_rng = jax.random.split(rng)
     pe_rngs = jax.random.split(pe_rng, args.n_bins)
 
-    traj = vmapped_policy_eval_fn(env_state, obsv, pe_rngs, interpolated_pi_params)
+    traj, final_val, final_done = vmapped_policy_eval_fn(env_state, obsv, pe_rngs, interpolated_pi_params)
 
     disc_returns = first_nonzero_element(traj[0]['returned_discounted_episode_returns']).reshape(args.n_bins, -1)
     returns = first_nonzero_element(traj[0]['returned_episode_returns']).reshape(args.n_bins, -1)
@@ -152,6 +162,10 @@ def run_and_save_pe(passed_in_args: dict = None):
         'training_discounted_returns': train_disc_rets,
         'training_returns': train_rets
     }
+    if train_args['alg'] == 'ppo':
+        adv, gae = agent.target(traj, final_val, final_done)
+        res['gae'] = gae
+        res['adv'] = adv
 
     res = jax.tree.map(lambda x: np.array(x), res)
 
@@ -163,5 +177,6 @@ def run_and_save_pe(passed_in_args: dict = None):
     return res_path
 
 
+
 if __name__ == "__main__":
-    run_and_save_pe()
+    run_and_save_mc_pe()
