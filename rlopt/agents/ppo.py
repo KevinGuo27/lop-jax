@@ -85,7 +85,7 @@ class PPOAgent(ActorCriticAgent):
             done, value, reward = transition.done, transition.value, transition.reward
             delta = reward + self.gamma * next_value * (1 - next_done) - value
             gae = delta + self.gamma * self.adv_lambda * (1 - next_done) * gae
-            return (gae, value, done, self.adv_lambda), gae
+            return (gae, value, done), gae
 
         _, advantages = jax.lax.scan(_get_advantages,
                                      (jnp.zeros_like(last_vals), last_vals, last_done),

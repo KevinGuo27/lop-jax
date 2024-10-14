@@ -33,21 +33,6 @@ def compute_n_step_returns(traj_batch: Transition, last_vals, gamma: float):
     return returns
 
 
-def calculate_gae(traj_batch, last_val, last_done, gae_lambda, gamma: float):
-    def _get_advantages(carry, transition):
-        gae, next_value, next_done, gae_lambda = carry
-        done, value, reward = transition.done, transition.value, transition.reward
-        delta = reward + gamma * next_value * (1 - next_done) - value
-        gae = delta + gamma * gae_lambda * (1 - next_done) * gae
-        return (gae, value, done, gae_lambda), gae
-
-    _, advantages = jax.lax.scan(_get_advantages,
-                                 (jnp.zeros_like(last_val), last_val, last_done, gae_lambda),
-                                 traj_batch, reverse=True, unroll=16)
-    target = advantages + traj_batch.value
-    return advantages, target
-
-
 class ActorCriticAgent:
     def __init__(self, network, args: PolicyHyperparams):
         self.value_loss_weight = args.value_loss_weight
