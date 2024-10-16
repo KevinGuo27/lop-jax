@@ -41,16 +41,9 @@ class ActorCriticAgent:
         self.network = network
 
     def act(self, rng: chex.PRNGKey, params: dict, obs: jnp.ndarray):
-        obs = obs[None, :]
         pi, value = self.network.apply(params, obs)
         action = pi.sample(seed=rng)
-
         log_prob = pi.log_prob(action)
-        value, action, log_prob = (
-            value.squeeze(0),
-            action.squeeze(0),
-            log_prob.squeeze(0),
-        )
         return value, action, log_prob
 
     def loss(self, params, traj_batch, returns, value_targets):

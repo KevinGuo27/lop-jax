@@ -13,6 +13,7 @@ class PPOAgent(ActorCriticAgent):
                  args: PolicyHyperparams):
         super().__init__(network, args)
         self.adv_lambda = args.adv_lambda
+        self.vf_coeff = args.vf_coeff
         self.entropy_coeff = args.entropy_coeff
         self.clip_eps = args.clip_eps
 
@@ -21,23 +22,15 @@ class PPOAgent(ActorCriticAgent):
             obs: chex.Array):
 
         # SELECT ACTION
-        ac_in = obs[None, :]
-        pi, value = self.network.apply(params, ac_in)
+        pi, value = self.network.apply(params, obs)
         action = pi.sample(seed=rng)
         log_prob = pi.log_prob(action)
 
-        value, action, log_prob = (
-            value.squeeze(0),
-            action.squeeze(0),
-            log_prob.squeeze(0),
-        )
         return value, action, log_prob
 
     def loss(self, params: dict, traj_batch: Transition, gae: jnp.ndarray, targets: jnp.ndarray):
         # RERUN NETWORK
-        pi, value = self.network.apply(
-            params, traj_batch.obs
-        )
+        pi, value = self.network.apply(params, traj_batch.obs)
         log_prob = pi.log_prob(traj_batch.action)
 
         # CALCULATE VALUE LOSS
@@ -47,12 +40,11 @@ class PPOAgent(ActorCriticAgent):
         value_losses = jnp.square(value - targets)
         value_losses_clipped = jnp.square(value_pred_clipped - targets)
         value_loss = (
-            jnp.maximum(value_losses, value_losses_clipped).mean()
+                0.5 * jnp.maximum(value_losses, value_losses_clipped).mean()
         )
+
         # CALCULATE ACTOR LOSS
         ratio = jnp.exp(log_prob - traj_batch.log_prob)
-
-        # which advantage do we use to update our policy?
         gae = (gae - gae.mean()) / (gae.std() + 1e-8)
         loss_actor1 = ratio * gae
         loss_actor2 = (
@@ -60,7 +52,7 @@ class PPOAgent(ActorCriticAgent):
                     ratio,
                     1.0 - self.clip_eps,
                     1.0 + self.clip_eps,
-                    )
+                )
                 * gae
         )
         loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
@@ -69,7 +61,7 @@ class PPOAgent(ActorCriticAgent):
 
         total_loss = (
                 loss_actor
-                + value_loss
+                + self.vf_coeff * value_loss
                 - self.entropy_coeff * entropy
         )
 
@@ -83,8 +75,8 @@ class PPOAgent(ActorCriticAgent):
         def _get_advantages(carry, transition):
             gae, next_value, next_done = carry
             done, value, reward = transition.done, transition.value, transition.reward
-            delta = reward + self.gamma * next_value * (1 - next_done) - value
-            gae = delta + self.gamma * self.adv_lambda * (1 - next_done) * gae
+            delta = reward + self.gamma * next_value * (1 - done) - value
+            gae = delta + self.gamma * self.adv_lambda * (1 - done) * gae
             return (gae, value, done), gae
 
         _, advantages = jax.lax.scan(_get_advantages,

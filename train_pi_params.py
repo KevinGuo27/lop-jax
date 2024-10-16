@@ -55,7 +55,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
     # INIT NETWORK
     rng, _rng = jax.random.split(rng)
-    init_x = jnp.zeros((1, args.num_envs, *env.observation_space(env_params).shape))
+    init_x = jnp.zeros(env.observation_space(env_params).shape)
 
     network_params = network.init(_rng, init_x)
 
@@ -103,6 +103,17 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
         # TRAIN LOOP
         def _update_step(runner_state, i):
+            def _update_minbatch(train_state, batch_info):
+                traj_batch, returns, value_targets = batch_info
+
+                # Now update our params
+                grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
+                total_loss, grads = grad_fn(
+                    train_state.params, traj_batch, returns, value_targets
+                )
+                train_state = train_state.apply_gradients(grads=grads)
+                return train_state, total_loss
+
             # COLLECT TRAJECTORIES
             runner_state, traj_batch = jax.lax.scan(
                 _env_step, runner_state, jnp.arange(args.num_steps), args.num_steps
@@ -112,32 +123,30 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
             _, final_val = network.apply(train_state.params, final_obs)
 
             # CALCULATE TARGETS
-            vmapped_target_fn = jax.vmap(agent.target, in_axes=[1, 0, 0], out_axes=1)
-            returns, value_targets = vmapped_target_fn(traj_batch, final_val, final_done)
-            batch = (returns, value_targets, traj_batch)
+            returns, value_targets = agent.target(traj_batch, final_val, final_done)
 
-            # flatten everything
-            def flatten_first_n(arr: jnp.ndarray, n: int):
-                return arr.reshape(-1, *arr.shape[n:])
-            flatten_first_two = partial(flatten_first_n, n=2)
+            batch_size = args.num_steps * args.num_envs
 
-            flat_batch = jax.tree.map(flatten_first_two, batch)
-            flat_returns, flat_value_targets, flat_traj = flat_batch
-
-            # now we need to shuffle everything
             rng, _rng = jax.random.split(rng)
-            permutation = jax.random.permutation(_rng, flat_value_targets.shape[0])
-
-            shuffled_returns, shuffled_value_targets, shuffled_traj = jax.tree.map(
-                lambda x: jnp.take(x, permutation, axis=0), flat_batch
+            permutation = jax.random.permutation(_rng, batch_size)
+            batch = (traj_batch, returns, value_targets)
+            batch = jax.tree_util.tree_map(
+                lambda x: x.reshape((batch_size,) + x.shape[2:]), batch
+            )
+            shuffled_batch = jax.tree_util.tree_map(
+                lambda x: jnp.take(x, permutation, axis=0), batch
+            )
+            # Mini-batch Updates
+            minibatches = jax.tree_util.tree_map(
+                lambda x: jnp.reshape(
+                    x, [args.num_envs, -1] + list(x.shape[1:])
+                ),
+                shuffled_batch,
             )
 
-            # Now update our params
-            grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
-            total_loss, grads = grad_fn(
-                train_state.params, shuffled_traj, shuffled_returns, shuffled_value_targets
-            )
-            train_state = train_state.apply_gradients(grads=grads)
+            train_state, total_loss = jax.lax.scan(
+                _update_minbatch, train_state, minibatches)
+
             runner_state = (train_state, env_state, final_obs, final_done, rng)
 
             # save metrics only every steps_log_freq
@@ -180,7 +189,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
 
 def run_train(passed_in_args: Union[dict, PolicyHyperparams] = None) -> Path:
-    # jax.disable_jit(True)
+    jax.disable_jit(True)
     ph = PolicyHyperparams()
     if isinstance(passed_in_args, PolicyHyperparams):
         args = passed_in_args

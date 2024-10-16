@@ -29,6 +29,7 @@ class PolicyHyperparams(Hyperparams):
 
     # PPO
     entropy_coeff: float = 0.01
+    vf_coeff: float = 0.5
     clip_eps: float = 0.2
     max_grad_norm: float = 0.5
     anneal_lr: bool = True
