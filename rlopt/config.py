@@ -18,9 +18,11 @@ class PolicyHyperparams(Hyperparams):
     env: str = 'CartPole-v1'
     alg: Literal['actor_critic', 'ppo'] = 'actor_critic'
     lr: float = 1e-4
-    value_loss_weight: float = 0.
     hidden_size: int = 32
     l2_reg_coeff: float = 0.  # Do we use L2 regularization?
+
+    # Actor Critic
+    value_loss_weight: float = 0.
 
     gamma: float = 0.95
     num_steps: int = 1000  # How many steps in our n-step returns?
