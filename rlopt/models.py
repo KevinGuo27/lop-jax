@@ -1,6 +1,5 @@
 import distrax
 import flax.linen as nn
-from gymnax.environments.spaces import Box, Discrete, Space
 from jax._src.nn.initializers import orthogonal, constant
 import jax.numpy as jnp
 
@@ -67,32 +66,18 @@ class SimpleNN(nn.Module):
         return out
 
 
-def is_continuous(space: Space):
-    if isinstance(space, Box):
-        return True
-    elif isinstance(space, Discrete):
-        return False
-    else:
-        raise NotImplementedError
 
 
 class ActorCritic(nn.Module):
-    action_space: Space
+    action_dim: int
+    is_continuous: bool = False
     hidden_size: int = 128
-
-    def setup(self) -> None:
-        if isinstance(self.action_space, Box):
-            action_shape = self.action_space.shape
-            assert len(action_shape) == 1, "Can't handle action dim > 1"
-            self.action_dim = action_shape[0]
-        elif isinstance(self.action_space, Discrete):
-            self.action_dim = self.action_space.n
 
     @nn.compact
     def __call__(self, x):
         embedding = SimpleNN(hidden_size=self.hidden_size)(x)
 
-        actor = Actor(self.action_dim, continuous=is_continuous(self.action_space), hidden_size=self.hidden_size)
+        actor = Actor(self.action_dim, continuous=self.is_continuous, hidden_size=self.hidden_size)
         pi = actor(embedding)
 
         critic = Critic(hidden_size=self.hidden_size)

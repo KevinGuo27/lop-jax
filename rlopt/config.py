@@ -17,15 +17,16 @@ class Hyperparams(Tap):
 class PolicyHyperparams(Hyperparams):
     env: str = 'CartPole-v1'
     alg: Literal['actor_critic', 'ppo'] = 'actor_critic'
-    lr: float = 1e-4
+    lr: float = 2.5e-4
     hidden_size: int = 32
     l2_reg_coeff: float = 0.  # Do we use L2 regularization?
+    num_minibatches: int = 4
 
     # Actor Critic
     value_loss_weight: float = 0.
 
     gamma: float = 0.95
-    num_steps: int = 1000  # How many steps in our n-step returns?
+    num_steps: int = 128  # How many steps in our n-step returns?
 
     # PPO
     entropy_coeff: float = 0.01

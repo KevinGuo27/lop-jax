@@ -1,4 +1,5 @@
 from brax.envs import _envs as brax_envs
+from gymnax.environments.spaces import Box, Discrete, Space
 import gymnax
 from gymnax import EnvParams
 
@@ -24,3 +25,11 @@ def load_env(env_str: str, gamma: float):
     env = VecEnv(env)
     return env, env_params
 
+
+def is_continuous(space: Space):
+    if isinstance(space, Box):
+        return True
+    elif isinstance(space, Discrete):
+        return False
+    else:
+        raise NotImplementedError

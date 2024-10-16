@@ -16,6 +16,7 @@ class PPOAgent(ActorCriticAgent):
         self.vf_coeff = args.vf_coeff
         self.entropy_coeff = args.entropy_coeff
         self.clip_eps = args.clip_eps
+        # self.loss = jax.jit(self.loss, static_argnums=0)
 
     def act(self, rng: chex.PRNGKey,
             params: dict,
@@ -69,18 +70,18 @@ class PPOAgent(ActorCriticAgent):
 
         return total_loss, (value_loss, loss_actor, entropy)
 
-    def target(self, traj_batch: Transition, last_vals: chex.Array, last_done):
+    def target(self, traj_batch: Transition, last_val: chex.Array):
         # Generalized Advantage Estimation
 
         def _get_advantages(carry, transition):
-            gae, next_value, next_done = carry
+            gae, next_value = carry
             done, value, reward = transition.done, transition.value, transition.reward
             delta = reward + self.gamma * next_value * (1 - done) - value
             gae = delta + self.gamma * self.adv_lambda * (1 - done) * gae
-            return (gae, value, done), gae
+            return (gae, value), gae
 
         _, advantages = jax.lax.scan(_get_advantages,
-                                     (jnp.zeros_like(last_vals), last_vals, last_done),
+                                     (jnp.zeros_like(last_val), last_val),
                                      traj_batch, reverse=True, unroll=16)
         target = advantages + traj_batch.value
         return advantages, target

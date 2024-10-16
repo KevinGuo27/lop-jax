@@ -63,7 +63,7 @@ class ActorCriticAgent:
 
         return total_loss, {'actor_loss': actor_loss, 'value_loss': value_loss}
 
-    def target(self, traj_batch: Transition, last_vals: chex.Array, last_done: chex.Array):
+    def target(self, traj_batch: Transition, last_vals: chex.Array):
         # N step returns
         def _step(prev_vals, runner):
             terminal, reward = runner
