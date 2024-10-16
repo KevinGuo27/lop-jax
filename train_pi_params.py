@@ -180,7 +180,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
 
 def run_train(passed_in_args: Union[dict, PolicyHyperparams] = None) -> Path:
-    jax.disable_jit(True)
+    # jax.disable_jit(True)
     ph = PolicyHyperparams()
     if isinstance(passed_in_args, PolicyHyperparams):
         args = passed_in_args

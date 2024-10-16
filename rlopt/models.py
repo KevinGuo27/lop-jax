@@ -8,13 +8,13 @@ import jax.numpy as jnp
 class Actor(nn.Module):
     action_dim: int
     continuous: bool = False
+    activation: str = 'tanh'
     hidden_size: int = 128
-    # TODO: refactor so that we'd also allow for continuous actions
 
     @nn.compact
     def __call__(self, x):
         activation = nn.relu
-        if self.continuous:
+        if self.activation == 'tanh':
             activation = nn.tanh
 
         actor_mean = nn.Dense(self.hidden_size, kernel_init=orthogonal(2), bias_init=constant(0.0))(
