@@ -4,9 +4,6 @@ from pathlib import Path
 from typing import Sequence, Union
 
 import chex
-import distrax
-import flax.linen as nn
-from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
 from flax.training import orbax_utils
 from gymnax.environments.spaces import Box, Discrete
@@ -26,44 +23,6 @@ from rlopt.models import ActorCritic
 def filter_period_first_dim(x, n: int):
     if isinstance(x, jnp.ndarray) or isinstance(x, np.ndarray):
         return x[::n]
-
-
-class ActorCriticOG(nn.Module):
-    action_dim: Sequence[int]
-    activation: str = "tanh"
-
-    @nn.compact
-    def __call__(self, x):
-        if self.activation == "relu":
-            activation = nn.relu
-        else:
-            activation = nn.tanh
-        actor_mean = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-        )(x)
-        actor_mean = activation(actor_mean)
-        actor_mean = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-        )(actor_mean)
-        actor_mean = activation(actor_mean)
-        actor_mean = nn.Dense(
-            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(actor_mean)
-        pi = distrax.Categorical(logits=actor_mean)
-
-        critic = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-        )(x)
-        critic = activation(critic)
-        critic = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-        )(critic)
-        critic = activation(critic)
-        critic = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
-            critic
-        )
-
-        return pi, jnp.squeeze(critic, axis=-1)
 
 
 def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
@@ -122,6 +81,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
             params=network_params,
             tx=tx,
         )
+        initial_train_state = train_state
 
         # INIT ENV
         rng, _rng = jax.random.split(rng)
@@ -225,8 +185,9 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
             _update_step, runner_state, None, num_updates
         )
         metric = jax.tree.map(updates_filter, metric)  # update_steps x (args.num_steps // args.steps_log_freq) x num_envs
+        final_train_state = runner_state[0]
 
-        return {"runner_state": runner_state, "metrics": metric}
+        return initial_train_state, final_train_state, metric
 
     return train
 
