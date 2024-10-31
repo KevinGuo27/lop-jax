@@ -29,9 +29,18 @@ class PPOAgent(ActorCriticAgent):
 
         return value, action, log_prob
 
-    def loss(self, params: dict, traj_batch: Transition, gae: jnp.ndarray, targets: jnp.ndarray):
+    def loss(self, params: dict, traj_batch: Transition, gae: jnp.ndarray, targets: jnp.ndarray,
+             return_intermediates: bool = False):
         # RERUN NETWORK
-        pi, value = self.network.apply(params, traj_batch.obs)
+        intermediates = None
+        if not return_intermediates:
+            pi, value = self.network.apply(params, traj_batch.obs)
+        else:
+            return_tuple, intermediates = self.network.apply(params, traj_batch.obs, capture_intermediates=True,
+                                        mutable=['intermediates'])
+            pi = return_tuple[0]
+            value = return_tuple[1]
+
         log_prob = pi.log_prob(traj_batch.action)
 
         # CALCULATE VALUE LOSS
@@ -68,7 +77,10 @@ class PPOAgent(ActorCriticAgent):
 
         total_loss += l2_regularization(params, alpha=self.l2_reg_coeff)
 
-        return total_loss, (value_loss, loss_actor, entropy)
+        if not return_intermediates:
+            return total_loss, (value_loss, loss_actor, entropy)
+        else:
+            return total_loss, (value_loss, loss_actor, entropy, intermediates)
 
     def target(self, traj_batch: Transition, last_val: chex.Array):
         # Generalized Advantage Estimation

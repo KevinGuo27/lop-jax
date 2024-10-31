@@ -6,7 +6,7 @@ from typing import Sequence, Union
 import chex
 import distrax
 import flax.linen as nn
-from flax.linen.initializers import constant, orthogonal
+from flax.linen.initializers import glorot_normal, glorot_uniform
 from flax.training.train_state import TrainState
 from flax.training import orbax_utils
 from gymnax.environments.spaces import Box, Discrete
@@ -15,6 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import orbax.checkpoint
+from optax import tree_utils as otu
 
 from rlopt.agents import ActorCriticAgent, PPOAgent, Transition
 from rlopt.config import PolicyHyperparams
@@ -22,13 +23,106 @@ from rlopt.envs import load_env, is_continuous
 from rlopt.file_system import get_results_path
 from rlopt.models import ActorCritic
 
-
 jax.config.update("jax_disable_jit", True)
+
 
 def filter_period_first_dim(x, n: int):
     if isinstance(x, jnp.ndarray) or isinstance(x, np.ndarray):
         return x[::n]
 
+def ContinualLearningState(NamedTuple):
+  """State for the Continual Learning algorithm."""
+  utility: optax._src.base.Updates
+  age: optax._src.base.Updates
+  eligible_neurons: float
+
+
+def continual_backprop(
+        rho: float = 1e-5,
+        eta: float = 0.99,
+        maturity_thresh: float = 100,
+        mu_dtype: Optional[Any] = None,
+) -> optax.base.GradientTransformation:
+
+    def init_fn(params):
+        utility = otu.tree_zeros_like(params, dtype=jnp.float32)
+        age = otu.tree_zeros_like(params, dtype=jnp.float32)
+        eligible_neurons = 0.0
+        return ContinualLearningState(utility=utility, eligible_neurons=eligible_neurons)
+
+    def update_fn(updates, state,  params, intermediates):
+        #utility = updates.
+        def is_leaf_sum_batch(node):
+            if type(node) != dict and type(node) == tuple:
+                if len(node) == 1 and getattr(node[0], "shape", None) is not None:
+                    node_shape = node[0].shape
+                    if len(node_shape) == 2:
+                        return True
+            return False
+
+        batch_average_intermediates = jax.tree.map(
+            lambda batched_outputs: jnp.average(jnp.abs(batched_outputs[0]), axis=0),
+            intermediates,
+            is_leaf=is_leaf_sum_batch
+        )
+
+        def is_leaf_broadcast_activation(node):
+            valid_node_keys = False
+            if type(node) == dict:
+                valid_node_keys = True
+                all_node_keys = node.keys()
+                for node_key in all_node_keys:
+                    if node_key not in ["__call__", "bias", "kernel"]:
+                        valid_node_keys = False
+                        break
+            return valid_node_keys
+
+        def replace_with_utility(activation_leaf_dict, params_leaf_dict):
+            activation_val = activation_leaf_dict["__call__"][0]
+            all_vals = jnp.sum(jnp.abs(jax.tree.leaves(params_leaf_dict)))
+            total_utility = activation_val*all_vals
+            tree_updated = jax.tree_map(lambda x: total_utility, params_leaf_dict)
+            return tree_updated
+
+        broadcasted_intermediates = jax.tree_map(replace_with_utility, batch_average_intermediates, params,
+                                                 is_leaf=is_leaf_broadcast_activation)
+
+        state.utility = jax.tree.map(lambda x, y: eta*x + (1 - eta)*y, state.utility, broadcasted_intermediates)
+        state.age = jax.tree.map(lambda x: x + 1, state.age)
+
+        def return_count_if_valid(node_dict):
+            if node_dict["bias"][0] > m:
+                return 1
+            return 0
+
+        new_eligibility = jax.tree_util.tree_reduce(
+            lambda x, y: x["bias"][0] + jnp.sum(y) if x["bias"][0] > maturity_thresh else 0,
+            state.age, initializer=0, is_leaf=is_leaf_broadcast_activation)
+
+        state.eligibile = state.eligibile + rho*new_eligibility
+        eligibility_int = int(state.eligibile)
+
+        utility_leaves = jax.tree_util.tree_leaves(state.utility)
+
+        # Concatenate all leaf values into a single array
+        concatenated_utility = jnp.concatenate([jnp.ravel(leaf) for leaf in utility_leaves])
+
+        # Get unique and sorted values
+        if eligibility_int > len(concatenated_utility):
+            eligibility_int = len(concatenated_utility)
+        upper_bound_eligible = jnp.sort(jnp.unique(concatenated_utility))[eligibility_int - 1]
+
+        replacement_multiplicative_term = jax.tree.map(
+            lambda param_util, param_age: -1.0 if param_util <= upper_bound_eligible and param_age >= maturity_thresh else 0.0,
+        state.utility, state.age
+        )
+
+
+
+
+
+
+    return optax.base.GradientTransformation(init_fn, update_fn)
 
 class ActorCriticOG(nn.Module):
     action_dim: Sequence[int]
@@ -41,27 +135,27 @@ class ActorCriticOG(nn.Module):
         else:
             activation = nn.tanh
         actor_mean = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            64, kernel_init=glorot_normal()
         )(x)
         actor_mean = activation(actor_mean)
         actor_mean = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            64, kernel_init=glorot_normal()
         )(actor_mean)
         actor_mean = activation(actor_mean)
         actor_mean = nn.Dense(
-            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+            self.action_dim, kernel_init=glorot_uniform()
         )(actor_mean)
         pi = distrax.Categorical(logits=actor_mean)
 
         critic = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            64, kernel_init=glorot_normal()
         )(x)
         critic = activation(critic)
         critic = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            64, kernel_init=glorot_normal()
         )(critic)
         critic = activation(critic)
-        critic = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
+        critic = nn.Dense(1, kernel_init=glorot_uniform())(
             critic
         )
 
@@ -70,10 +164,10 @@ class ActorCriticOG(nn.Module):
 
 def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
     num_updates = (
-        args.total_steps // args.num_steps // args.num_envs
+            args.total_steps // args.num_steps // args.num_envs
     )
     minibatch_size = (
-        args.num_envs * args.num_steps // args.num_minibatches
+            args.num_envs * args.num_steps // args.num_minibatches
     )
     env, env_params = load_env(args.env, gamma=args.gamma)
 
@@ -84,7 +178,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
         action_dim = action_shape[0]
     elif isinstance(action_space, Discrete):
         action_dim = action_space.n
-    network = ActorCritic(is_continuous=is_continuous(action_space),
+    network = ActorCriticOG(is_continuous=is_continuous(action_space),
                           action_dim=action_dim,
                           hidden_size=args.hidden_size)
 
@@ -101,9 +195,9 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
     def linear_schedule(count):
         frac = (
-            1.0
-            - (count // (args.num_minibatches * args.update_epochs))
-            / num_updates
+                1.0
+                - (count // (args.num_minibatches * args.update_epochs))
+                / num_updates
         )
         return args.lr * frac
 
@@ -158,10 +252,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
             # CALCULATE ADVANTAGE
             train_state, env_state, last_obs, rng = runner_state
-            last_val_tuple, intermediates = network.apply(train_state.params, last_obs, capture_intermediates=True,
-                                        mutable=['intermediates'])
-            last_val = last_val_tuple[1]
-
+            _, last_val = network.apply(train_state.params, last_obs)
             advantages, targets = agent.target(traj_batch, last_val)
 
             # UPDATE NETWORK
@@ -174,7 +265,8 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                         train_state.params, traj_batch, advantages, targets, return_intermediates=True
                     )
                     train_state = train_state.apply_gradients(grads=grads)
-
+                    import pdbr
+                    pdbr.set_trace()
                     return train_state, total_loss
 
                 train_state, traj_batch, advantages, targets, rng = update_state
@@ -182,7 +274,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                 # Batching and Shuffling
                 batch_size = minibatch_size * args.num_minibatches
                 assert (
-                    batch_size == args.num_steps * args.num_envs
+                        batch_size == args.num_steps * args.num_envs
                 ), "batch size must be equal to number of steps * number of envs"
                 permutation = jax.random.permutation(_rng, batch_size)
                 batch = (traj_batch, advantages, targets)
@@ -204,6 +296,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                 )
                 update_state = (train_state, traj_batch, advantages, targets, rng)
                 return update_state, total_loss
+
             # Updating Training State and Metrics:
             update_state = (train_state, traj_batch, advantages, targets, rng)
             update_state, loss_info = jax.lax.scan(
@@ -213,7 +306,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
             metric = traj_batch.info
             metric = jax.tree.map(steps_filter, metric)
             rng = update_state[-1]
-            
+
             # Debugging mode
             if args.debug:
                 def callback(info):
@@ -221,6 +314,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                     timesteps = info["timestep"][info["returned_episode"]] * args.num_envs
                     for t in range(len(timesteps)):
                         print(f"global step={timesteps[t]}, episodic return={return_values[t]}")
+
                 jax.debug.callback(callback, metric)
 
             runner_state = (train_state, env_state, last_obs, rng)
@@ -232,7 +326,8 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
         runner_state, metric = jax.lax.scan(
             _update_step, runner_state, None, num_updates
         )
-        metric = jax.tree.map(updates_filter, metric)  # update_steps x (args.num_steps // args.steps_log_freq) x num_envs
+        metric = jax.tree.map(updates_filter,
+                              metric)  # update_steps x (args.num_steps // args.steps_log_freq) x num_envs
 
         return {"runner_state": runner_state, "metrics": metric}
 

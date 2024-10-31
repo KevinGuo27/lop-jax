@@ -46,8 +46,15 @@ class ActorCriticAgent:
         log_prob = pi.log_prob(action)
         return value, action, log_prob
 
-    def loss(self, params, traj_batch, returns, value_targets):
-        pi, value = self.network.apply(params, traj_batch.obs)
+    def loss(self, params, traj_batch, returns, value_targets, return_intermediates: bool = False):
+        intermediates = None
+        if not return_intermediates:
+            pi, value = self.network.apply(params, traj_batch.obs)
+        else:
+            return_tuple, intermediates = self.network.apply(params, traj_batch.obs, capture_intermediates=True,
+                                                             mutable=['intermediates'])
+            pi = return_tuple[0]
+            value = return_tuple[1]
         log_prob = pi.log_prob(traj_batch.action)
 
         # CALCULATE VALUE LOSS
@@ -60,8 +67,10 @@ class ActorCriticAgent:
         total_loss = self.value_loss_weight * value_loss + actor_loss
 
         total_loss += l2_regularization(params, alpha=self.l2_reg_coeff)
-
-        return total_loss, {'actor_loss': actor_loss, 'value_loss': value_loss}
+        if not return_intermediates:
+            return total_loss, {'actor_loss': actor_loss, 'value_loss': value_loss}
+        else:
+            return total_loss, {'actor_loss': actor_loss, 'value_loss': value_loss, 'intermediates': intermediates}
 
     def target(self, traj_batch: Transition, last_vals: chex.Array):
         # N step returns
