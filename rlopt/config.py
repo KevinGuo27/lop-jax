@@ -37,7 +37,7 @@ class PolicyHyperparams(Hyperparams):
     adv_lambda: float = 0.95
     update_epochs: int = 4
 
-    total_steps: int = int(5e7)
+    total_steps: int = int(1e7)
     num_envs: int = 4
     n_param_sets: int = 2
     steps_log_freq: int = 128
