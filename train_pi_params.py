@@ -14,6 +14,7 @@ import optax
 import orbax.checkpoint
 
 from rlopt.agents import ActorCriticAgent, PPOAgent, Transition
+from rlopt.cbp import ContinualBackpropTrainState
 from rlopt.config import PolicyHyperparams
 from rlopt.envs import load_env, is_continuous
 from rlopt.file_system import get_results_path
@@ -45,17 +46,15 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
         action_dim = action_space.n
     network = ActorCritic(is_continuous=is_continuous(action_space),
                           action_dim=action_dim,
-                          hidden_size=args.hidden_size)
+                          h_dims=(args.hidden_size,) * (args.num_hidden_layers + 1))
 
     rng, _rng = jax.random.split(rng)
     init_x = jnp.zeros(env.observation_space(env_params).shape)
     network_params = network.init(_rng, init_x)
 
     if args.alg == 'ppo':
-        print("PPO agent bruv")
         agent = PPOAgent(network, args)
     else:
-        print("NOT PPO agent bruv")
         agent = ActorCriticAgent(network, args)
 
     def linear_schedule(count):
@@ -65,6 +64,10 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
             / num_updates
         )
         return args.lr * frac
+
+    tstate_class = TrainState
+    if args.cont_backprop:
+        tstate_class = ContinualBackpropTrainState
 
     steps_filter = partial(filter_period_first_dim, n=args.steps_log_freq)
     updates_filter = partial(filter_period_first_dim, n=args.updates_log_freq)
@@ -80,7 +83,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                 optax.clip_by_global_norm(args.max_grad_norm),
                 optax.adam(args.lr, eps=1e-5),
             )
-        train_state = TrainState.create(
+        train_state = tstate_class.create(
             apply_fn=network.apply,
             params=network_params,
             tx=tx,
@@ -118,9 +121,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
             # CALCULATE ADVANTAGE
             train_state, env_state, last_obs, rng = runner_state
-            last_val_tuple, intermediates = network.apply(train_state.params, last_obs, capture_intermediates=True,
-                                        mutable=['intermediates'])
-            last_val = last_val_tuple[1]
+            _, last_val, _ = network.apply(train_state.params, last_obs)
 
             advantages, targets = agent.target(traj_batch, last_val)
 
@@ -130,10 +131,14 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                     traj_batch, advantages, targets = batch_info
 
                     grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
+
+                    # TODO: return activations here.
                     total_loss, grads = grad_fn(
-                        train_state.params, traj_batch, advantages, targets, return_intermediates=True
+                        train_state.params, traj_batch, advantages, targets
                     )
                     train_state = train_state.apply_gradients(grads=grads)
+
+                    # TODO: GnT here. We need to pass in activations, params, and opt_state
 
                     return train_state, total_loss
 

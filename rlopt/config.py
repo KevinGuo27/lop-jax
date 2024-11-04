@@ -19,6 +19,7 @@ class PolicyHyperparams(Hyperparams):
     alg: Literal['actor_critic', 'ppo'] = 'actor_critic'
     lr: float = 2.5e-4
     hidden_size: int = 32
+    num_hidden_layers: int = 1
     l2_reg_coeff: float = 0.  # Do we use L2 regularization?
     num_minibatches: int = 4
 
@@ -27,6 +28,12 @@ class PolicyHyperparams(Hyperparams):
 
     gamma: float = 0.95
     num_steps: int = 128  # How many steps in our n-step returns?
+
+    # Continual Backprop
+    cont_backprop: bool = False
+    replacement_rate: float = 1e-4
+    decay_rate: float = 0.99
+    maturity_threshold: int = int(1e4)
 
     # PPO
     entropy_coeff: float = 0.01
