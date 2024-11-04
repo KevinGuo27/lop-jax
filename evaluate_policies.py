@@ -114,8 +114,9 @@ def make_policy_eval(args: PolicyEvalHyperparams):
             _run_episode, runner_state, jnp.arange(n_batches), n_batches
         )
         steps_last_traj_batch = jax.tree.map(lambda x: jnp.swapaxes(x, -1, -2), traj_batch)
+        steps_last_xtra_info = jax.tree.map(lambda x: jnp.swapaxes(x, -1, -2), xtra_info)
 
-        return steps_last_traj_batch, xtra_info
+        return steps_last_traj_batch, steps_last_xtra_info
 
     return policy_eval, batch_train_state, train_args, agent, env, env_params, info
 
@@ -178,7 +179,7 @@ def run_and_save_mc_pe(passed_in_args: dict = None,
     del dict_args['id_str']
 
     res = {
-        'train_args': train_args,
+        'train_args': train_args.as_dict(),
         'eval_args': dict_args,
         'taus': taus,
         'interpolated_discounted_returns': disc_returns,
@@ -186,7 +187,8 @@ def run_and_save_mc_pe(passed_in_args: dict = None,
         'training_discounted_returns': train_disc_rets,
         'training_returns': train_rets
     }
-    if train_args['alg'] == 'ppo':
+    if train_args.alg == 'ppo':
+        res['init_gae'] = xtra['gae'][..., 0].reshape(args.n_bins, -1)
         res['gae'] = xtra['gae']
         res['adv'] = xtra['advantages']
 
