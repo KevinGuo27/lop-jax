@@ -18,14 +18,14 @@ class Actor(nn.Module):
 
 
         # TODO: lecun init?
-        out_0 = nn.Dense(self.h_dims[0], kernel_init=orthogonal(2), bias_init=constant(0.0),
+        out_1 = nn.Dense(self.h_dims[0], kernel_init=orthogonal(2), bias_init=constant(0.0),
                          name='a_0')(
             x
         )
-        out_0 = activation(out_0)
-        activations = {'a_0': out_0}
+        out_1 = activation(out_1)
+        activations = {'a_0': None, 'a_1': out_1}
 
-        out_i = out_0
+        out_i = out_1
 
         for i in range(1, len(self.h_dims)):
             out_i = nn.Dense(self.h_dims[i], kernel_init=orthogonal(2), bias_init=constant(0.0),
@@ -33,10 +33,10 @@ class Actor(nn.Module):
                 out_i
             )
             out_i = activation(out_i)
-            activations[f'a_{i}'] = out_i
+            activations[f'a_{i + 1}'] = out_i
 
         out_i_plus_1 = nn.Dense(
-            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0), name=f'a_{len(self.h_dims)}_output'
+            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0), name=f'a_{len(self.h_dims)}'
         )(out_i)
 
         if self.continuous:
@@ -58,14 +58,14 @@ class Critic(nn.Module):
             activation = nn.tanh
 
         # TODO: lecun init?
-        out_0 = nn.Dense(self.h_dims[0], kernel_init=orthogonal(2), bias_init=constant(0.0),
+        out_1 = nn.Dense(self.h_dims[0], kernel_init=orthogonal(2), bias_init=constant(0.0),
                          name='c_0')(
             x
         )
-        out_0 = activation(out_0)
-        activations = {'c_0': out_0}
+        out_1 = activation(out_1)
+        activations = {'c_0': None, 'c_1': out_1}
 
-        out_i = out_0
+        out_i = out_1
 
         for i in range(1, len(self.h_dims)):
             out_i = nn.Dense(self.h_dims[i], kernel_init=orthogonal(2), bias_init=constant(0.0),
@@ -73,9 +73,9 @@ class Critic(nn.Module):
                 out_i
             )
             out_i = activation(out_i)
-            activations[f'c_{i}'] = out_i
+            activations[f'c_{i + 1}'] = out_i
 
-        out_i_plus_1 = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0), name=f'c_{len(self.h_dims)}_output')(
+        out_i_plus_1 = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0), name=f'c_{len(self.h_dims)}')(
             out_i
         )
         return out_i_plus_1, activations

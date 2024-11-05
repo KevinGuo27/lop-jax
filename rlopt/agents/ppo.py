@@ -23,7 +23,7 @@ class PPOAgent(ActorCriticAgent):
             obs: chex.Array):
 
         # SELECT ACTION
-        pi, value = self.network.apply(params, obs)
+        pi, value, _ = self.network.apply(params, obs)
         action = pi.sample(seed=rng)
         log_prob = pi.log_prob(action)
 
