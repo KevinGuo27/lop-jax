@@ -145,7 +145,6 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
                     train_state = train_state.apply_gradients(grads=grads)
 
-                    # TODO: GnT here. We need to pass in activations, params, and opt_state
                     if args.cont_backprop:
                         rng, _rng = jax.random.split(rng)
                         activations = losses_and_activations[-1]

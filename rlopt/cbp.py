@@ -56,7 +56,6 @@ def age_ignoring_top_p_percent_mask(rng, mask, vals, p):
     return top_p_mask_flat.reshape(vals.shape)
 
 
-
 def generate_seeds_for_pytree(key, pytree):
     """
     Generate a unique PRNGKey for each leaf in a PyTree.
@@ -91,6 +90,7 @@ class ContinualBackpropTrainState(TrainState):
     which means that the sum for each node should be the sum over axis=-1.
     """
     utils: struct.field(pytree_node=True)
+    mean_feature_activations: struct.field(pytree_node=True)
     ages: struct.field(pytree_node=True)
 
     @classmethod
@@ -107,6 +107,7 @@ class ContinualBackpropTrainState(TrainState):
 
         # we init our utilities.
         utils = jax.tree_util.tree_map_with_path(filter_input_and_bias, og_ts.params['params'], is_leaf=is_util_leaf)
+        mean_feature_activations = jax.tree_util.tree_map_with_path(filter_input_and_bias, og_ts.params['params'], is_leaf=is_util_leaf)
         ages = jax.tree_util.tree_map_with_path(filter_input_and_bias, og_ts.params['params'], is_leaf=is_util_leaf)
 
         return ContinualBackpropTrainState(
@@ -116,6 +117,7 @@ class ContinualBackpropTrainState(TrainState):
             tx=og_ts.tx,
             opt_state=og_ts.opt_state,
             utils=utils,
+            mean_feature_activations=mean_feature_activations,
             ages=ages,
             **kwargs,
         )
@@ -137,6 +139,8 @@ class ContinualBackpropTrainState(TrainState):
 
         # And our utilities
         new_utils = jax.tree.map(lambda x: x * decay_rate, self.utils)
+        new_mean_feature_activations = jax.tree.map(lambda x, act: x * decay_rate + (1 - decay_rate) * act.mean(axis=0),
+                                                    self.mean_feature_activations, activations)
         bias_correction = jax.tree.map(lambda x: 1 - decay_rate ** x, self.ages)
 
         def get_output_weight_mags(keys, u):
@@ -170,8 +174,8 @@ class ContinualBackpropTrainState(TrainState):
 
         replacement_mask = jax.tree.map(get_replacement_mask, rngs, eligiblility_mask, new_bias_corrected_utils)
 
-        # Mask our new utils we replace
         new_utils = jax.tree.map(lambda m, u: (1 - m) * u, replacement_mask, new_utils)
+        new_mean_feat_act = jax.tree.map(lambda m, u: (1 - m) * u, replacement_mask, new_mean_feature_activations)
 
         # TODO: zero out optimizer states related to replaced nodes
 
