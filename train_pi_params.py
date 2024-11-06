@@ -131,7 +131,8 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
             # UPDATE NETWORK
             def _update_epoch(update_state, unused):
-                def _update_minbatch(train_state, batch_info):
+                def _update_minbatch(runner_state, batch_info):
+                    train_state, rng = runner_state
                     traj_batch, advantages, targets = batch_info
 
                     grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
@@ -146,14 +147,16 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
                     if args.cont_backprop:
                         activations = losses_and_activations[-1]
-                        train_state = train_state.update_and_reinit(activations,
+                        rng, _rng = jax.random.split(rng)
+                        train_state = train_state.update_and_reinit(_rng,
+                                                                    activations,
                                                                     replacement_rate=args.replacement_rate,
                                                                     decay_rate=args.decay_rate,
                                                                     maturity_threshold=args.maturity_threshold)
 
                     loss_info = (total_loss, losses_and_activations[:-1])
 
-                    return train_state, loss_info
+                    return (train_state, rng), loss_info
 
                 train_state, traj_batch, advantages, targets, rng = update_state
                 rng, _rng = jax.random.split(rng)
@@ -178,8 +181,9 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                     shuffled_batch,
                 )
 
+                rng, _rng = jax.random.split(rng)
                 (_, train_state), total_loss = jax.lax.scan(
-                    _update_minbatch, train_state, minibatches
+                    _update_minbatch, (train_state, _rng), minibatches
                 )
                 update_state = (train_state, traj_batch, advantages, targets, rng)
                 return update_state, total_loss

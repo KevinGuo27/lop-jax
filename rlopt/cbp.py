@@ -30,6 +30,29 @@ def num_top_mask(mask, vals, num_top):
     return top_p_mask_flat.reshape(mask.shape)
 
 
+def generate_seeds_for_pytree(key, pytree):
+    """
+    Generate a unique PRNGKey for each leaf in a PyTree.
+
+    Parameters:
+    - key: JAX PRNGKey to start generating unique subkeys.
+    - pytree: The PyTree for which to generate unique subkeys.
+
+    Returns:
+    - A PyTree of the same structure as `pytree`, where each leaf is a unique PRNGKey.
+    """
+    # Flatten the PyTree and count the leaves
+    leaves, treedef = jax.tree.flatten(pytree)
+
+    # Split the original key into as many subkeys as there are leaves
+    subkeys = jax.random.split(key, num=len(leaves))
+
+    # Reconstruct the PyTree with the subkeys as leaves
+    subkeys_pytree = jax.tree.unflatten(treedef, subkeys)
+
+    return subkeys_pytree
+
+
 class ContinualBackpropTrainState(TrainState):
     """
     Continual Backprop implementation in JAX.
@@ -79,6 +102,7 @@ class ContinualBackpropTrainState(TrainState):
         )
 
     def update_and_reinit(self,
+                          rng: chex.PRNGKey,
                           activations: dict,
                           replacement_rate: float = 1e-4,
                           decay_rate: float = 0.99,
@@ -129,11 +153,33 @@ class ContinualBackpropTrainState(TrainState):
         new_ages = jax.tree.map(lambda m, a: (1 - m) * a, replacement_mask, new_ages)
 
         # TODO: reinit params based on replacement_mask
-        def replace_in_and_out(k, mask, og_params):
+        def replace_in_and_out(keys, og_params, rng):
+            final_key = keys[-1].key
+
+            in_rmask = replacement_mask
+            # we have 1: here b/c of 'params' key
+            for k in keys[1:-1]:
+                rmask = rmask[k.key]
+
+            # we get our OUT mask here
+            updated_params = og_params
+            if final_key in rmask:
+                out_mask = rmask[final_key]  # num_features
+                out_mask = out_mask[..., None].repeat(og_params.shape[-1])
+
+                # gain (relu) * sqrt(3 / in_features)
+                bound = jnp.sqrt(2) * jnp.sqrt(3 / og_params.shape[0])
+
+                random_init = jax.random.uniform(rng, shape=out_mask.shape, minval=-bound, maxval=bound)
+                updated_params = out_mask * random_init + (1 - out_mask) * og_params
+
+            # we get our IN mask here
+            # first we get key for our in features
             pass
 
-
-        new_params = {'params': jax.tree.map(replace_in_and_out, replacement_mask, self.params['params'])}
+        params = self.params['params']
+        rngs = generate_seeds_for_pytree(rng, params)
+        new_params = jax.tree_util.tree_map_with_path(replace_in_and_out, params, rngs)
 
         # TODO: zero out optimizer states related to replaced nodes
 
