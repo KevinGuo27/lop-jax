@@ -161,20 +161,23 @@ class ContinualBackpropTrainState(TrainState):
             for k in keys[1:-1]:
                 rmask = rmask[k.key]
 
+            # gain (relu) * sqrt(3 / in_features)
+            bound = jnp.sqrt(2) * jnp.sqrt(3 / og_params.shape[0])
+
             # we get our OUT mask here
             updated_params = og_params
             if final_key in rmask:
                 out_mask = rmask[final_key]  # num_features
                 out_mask = out_mask[..., None].repeat(og_params.shape[-1])
 
-                # gain (relu) * sqrt(3 / in_features)
-                bound = jnp.sqrt(2) * jnp.sqrt(3 / og_params.shape[0])
-
                 random_init = jax.random.uniform(rng, shape=out_mask.shape, minval=-bound, maxval=bound)
                 updated_params = out_mask * random_init + (1 - out_mask) * og_params
 
             # we get our IN mask here
             # first we get key for our in features
+            network_id, layer_num = final_key.split('_')
+            if int(layer_num) == 0:
+
             pass
 
         params = self.params['params']
