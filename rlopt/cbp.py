@@ -140,7 +140,7 @@ class ContinualBackpropTrainState(TrainState):
         # Now we figure out who CAN update first
         eligiblility_mask = jax.tree.map(lambda age: age > maturity_threshold, new_ages)
         num_new_features = jax.tree.map(lambda x: replacement_rate * x.sum(), eligiblility_mask)
-        floor_num_new_features = jax.tree.map(lambda x: jnp.floor(x), num_new_features)
+        floor_num_new_features = jax.tree.map(lambda x: jnp.floor(x).astype(int), num_new_features)
         new_acc_num_replacements = jax.tree.map(lambda acc, nnf, fnnf: acc + nnf - fnnf,
                                                 self.acc_num_replacements,
                                                 num_new_features,
@@ -154,11 +154,12 @@ class ContinualBackpropTrainState(TrainState):
 
         # TODO: reinit params based on replacement_mask
         def replace_in_and_out(keys, og_params, rng):
-            final_key = keys[-1].key
+            final_key = keys[-1].key  # either kernel or bias
+            layer_key = keys[-2].key
 
-            in_rmask = replacement_mask
+            rmask = replacement_mask
             # we have 1: here b/c of 'params' key
-            for k in keys[1:-1]:
+            for k in keys[1:-2]:
                 rmask = rmask[k.key]
 
             # gain (relu) * sqrt(3 / in_features)
@@ -166,23 +167,36 @@ class ContinualBackpropTrainState(TrainState):
 
             # we get our OUT mask here
             updated_params = og_params
-            if final_key in rmask:
-                out_mask = rmask[final_key]  # num_features
-                out_mask = out_mask[..., None].repeat(og_params.shape[-1])
+            if final_key != 'bias' and rmask[layer_key] is not None:
+                out_mask = rmask[layer_key]  # num_features
+                out_mask = out_mask[..., None].repeat(og_params.shape[-1], axis=-1)
 
-                random_init = jax.random.uniform(rng, shape=out_mask.shape, minval=-bound, maxval=bound)
-                updated_params = out_mask * random_init + (1 - out_mask) * og_params
+                rng, _rng = jax.random.split(rng)
+                random_init = jax.random.uniform(_rng, shape=out_mask.shape, minval=-bound, maxval=bound)
+                updated_params = out_mask * random_init + (1 - out_mask) * updated_params
 
-            # we get our IN mask here
-            # first we get key for our in features
-            network_id, layer_num = final_key.split('_')
-            if int(layer_num) == 0:
+            # we get our IN mask here. We update it based on the fact that final_key and og_params
+            # gives the PREVIOUS layer.
+            # first we get key for our in features for the next layer
+            network_id, layer_num = layer_key.split('_')
+            next_layer_key = f'{network_id}_{int(layer_num) + 1}'
 
-            pass
+            # This should filter out the last layer
+            if next_layer_key in rmask:
+                in_mask = rmask[next_layer_key]
+                if final_key == 'kernel':
+                    in_mask = in_mask[None, ...].repeat(og_params.shape[0], axis=0)
+                    rng, _rng = jax.random.split(rng)
+                    random_init = jax.random.uniform(_rng, shape=in_mask.shape, minval=-bound, maxval=bound)
+                    updated_params = in_mask * random_init + (1 - in_mask) * updated_params
+                elif final_key == 'bias':
+                    # zero out the biases to replace
+                    updated_params = (1 - in_mask) * updated_params
 
-        params = self.params['params']
-        rngs = generate_seeds_for_pytree(rng, params)
-        new_params = jax.tree_util.tree_map_with_path(replace_in_and_out, params, rngs)
+            return updated_params
+
+        rngs = generate_seeds_for_pytree(rng, self.params)
+        new_params = jax.tree_util.tree_map_with_path(replace_in_and_out, self.params, rngs)
 
         # TODO: zero out optimizer states related to replaced nodes
 
