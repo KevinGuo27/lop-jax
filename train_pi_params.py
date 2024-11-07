@@ -19,6 +19,7 @@ from rlopt.config import PolicyHyperparams
 from rlopt.envs import load_env, is_continuous
 from rlopt.file_system import get_results_path
 from rlopt.models import ActorCritic
+from rlopt.utils import adam_with_param_counts
 
 
 
@@ -75,12 +76,12 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
         if args.anneal_lr:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                optax.adam(learning_rate=linear_schedule, eps=1e-5),
+                adam_with_param_counts(learning_rate=linear_schedule, eps=1e-5),
             )
         else:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                optax.adam(args.lr, eps=1e-5),
+                adam_with_param_counts(learning_rate=args.lr, eps=1e-5),
             )
         train_state = tstate_class.create(
             apply_fn=network.apply,
@@ -182,7 +183,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                 )
 
                 rng, _rng = jax.random.split(rng)
-                (_, train_state), total_loss = jax.lax.scan(
+                (train_state, _), total_loss = jax.lax.scan(
                     _update_minbatch, (train_state, _rng), minibatches
                 )
                 update_state = (train_state, traj_batch, advantages, targets, rng)
@@ -224,7 +225,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
 
 def run_train(passed_in_args: Union[dict, PolicyHyperparams] = None) -> Path:
-    jax.disable_jit(True)
+    # jax.disable_jit(True)
     ph = PolicyHyperparams()
     if isinstance(passed_in_args, PolicyHyperparams):
         args = passed_in_args

@@ -5,6 +5,7 @@ from flax import struct
 from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
+from optax import ScaleByAdamState
 
 
 def num_top_mask(mask, vals, num_top):
@@ -152,8 +153,9 @@ class ContinualBackpropTrainState(TrainState):
         new_utils = jax.tree.map(lambda m, u: (1 - m) * u, replacement_mask, new_utils)
         new_ages = jax.tree.map(lambda m, a: (1 - m) * a, replacement_mask, new_ages)
 
-        # TODO: reinit params based on replacement_mask
-        def replace_in_and_out(keys, og_params, rng):
+        # helper fn to reinit params based on replacement_mask
+        def replace_in_and_out(keys, og_params, rng,
+                               rand_init_kernel: bool = True):
             final_key = keys[-1].key  # either kernel or bias
             layer_key = keys[-2].key
 
@@ -171,9 +173,11 @@ class ContinualBackpropTrainState(TrainState):
                 out_mask = rmask[layer_key]  # num_features
                 out_mask = out_mask[..., None].repeat(og_params.shape[-1], axis=-1)
 
-                rng, _rng = jax.random.split(rng)
-                random_init = jax.random.uniform(_rng, shape=out_mask.shape, minval=-bound, maxval=bound)
-                updated_params = out_mask * random_init + (1 - out_mask) * updated_params
+                updated_params = (1 - out_mask) * updated_params
+                if rand_init_kernel:
+                    rng, _rng = jax.random.split(rng)
+                    random_init = jax.random.uniform(_rng, shape=out_mask.shape, minval=-bound, maxval=bound)
+                    updated_params += out_mask * random_init
 
             # we get our IN mask here. We update it based on the fact that final_key and og_params
             # gives the PREVIOUS layer.
@@ -186,9 +190,12 @@ class ContinualBackpropTrainState(TrainState):
                 in_mask = rmask[next_layer_key]
                 if final_key == 'kernel':
                     in_mask = in_mask[None, ...].repeat(og_params.shape[0], axis=0)
-                    rng, _rng = jax.random.split(rng)
-                    random_init = jax.random.uniform(_rng, shape=in_mask.shape, minval=-bound, maxval=bound)
-                    updated_params = in_mask * random_init + (1 - in_mask) * updated_params
+
+                    updated_params = (1 - in_mask) * updated_params
+                    if rand_init_kernel:
+                        rng, _rng = jax.random.split(rng)
+                        random_init = jax.random.uniform(_rng, shape=in_mask.shape, minval=-bound, maxval=bound)
+                        updated_params = in_mask * random_init
                 elif final_key == 'bias':
                     # zero out the biases to replace
                     updated_params = (1 - in_mask) * updated_params
@@ -196,9 +203,28 @@ class ContinualBackpropTrainState(TrainState):
             return updated_params
 
         rngs = generate_seeds_for_pytree(rng, self.params)
-        new_params = jax.tree_util.tree_map_with_path(replace_in_and_out, self.params, rngs)
+        param_replace_fn = partial(replace_in_and_out, rand_init_kernel=True)
+        new_params = jax.tree_util.tree_map_with_path(param_replace_fn, self.params, rngs)
 
-        # TODO: zero out optimizer states related to replaced nodes
+        # zero out optimizer states related to replaced nodes
+        empty_state, op_state = self.opt_state
+        adam_state, sched_state = op_state
 
+        assert isinstance(adam_state, ScaleByAdamState), 'CBP currently only works with the adam optimizer.'
+        opt_state_replace_fn = partial(replace_in_and_out, rand_init_kernel=False)
 
-        pass
+        # zero out adam state parameters according to replacement_mask
+        new_count = jax.tree_util.tree_map_with_path(opt_state_replace_fn, adam_state.count, rngs)
+        new_mu = jax.tree_util.tree_map_with_path(opt_state_replace_fn, adam_state.mu, rngs)
+        new_nu = jax.tree_util.tree_map_with_path(opt_state_replace_fn, adam_state.nu, rngs)
+
+        new_adam_state = ScaleByAdamState(count=new_count, mu=new_mu, nu=new_nu)
+        new_opt_state = (empty_state, (new_adam_state, sched_state))
+
+        return self.replace(
+            params=new_params,
+            opt_state=new_opt_state,
+            utils=new_utils,
+            ages=new_ages,
+            acc_num_replacements=new_acc_num_replacements
+        )
