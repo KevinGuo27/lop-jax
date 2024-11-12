@@ -28,7 +28,7 @@ class PolicyHyperparams(Hyperparams):
     value_loss_weight: float = 0.
 
     gamma: float = 0.95
-    num_steps: int = 128  # How many steps in our n-step returns?
+    num_steps: int = 20  # How many steps in our n-step returns?
 
     # Continual Backprop
     cont_backprop: bool = False
@@ -63,3 +63,7 @@ class PolicyEvalHyperparams(Hyperparams):
 
     # CARTPOLE
     cartpole_gravity_offset: float = 0.
+
+
+class NonStationaryPolicyHyperparams(PolicyHyperparams):
+    change_every: int = int(1e6)

@@ -140,3 +140,47 @@ class ClipAction(GymnaxWrapper):
         # action = jnp.clip(action, self.env.action_space.low, self.env.action_space.high)
         action = jnp.clip(action, self.low, self.high)
         return self._env.step(key, state, action, params)
+
+
+@struct.dataclass
+class SlipperyAntState:
+    env_state: environment.EnvState
+    step: chex.Array
+
+
+class SlipperyAntWrapper(GymnaxWrapper):
+    
+    def __init__(self, env, change_every: int = int(1e6),
+                 lower_friction_exp: float = -4,
+                 upper_friction_exp: float = 4):
+        super().__init__(env)
+        self.change_every = change_every
+        self.lower_friction_exp = lower_friction_exp
+        self.upper_friction_exp = upper_friction_exp
+
+    @partial(jax.jit, static_argnums=(0))
+    def reset(
+            self, key: chex.PRNGKey, params: Optional[environment.EnvParams] = None
+    ) -> Tuple[chex.Array, SlipperyAntState]:
+        obs, env_state = self._env.reset(key, params)
+        return obs, SlipperyAntState(env_state=env_state, step=jnp.zeros([], dtype=int))
+
+    @partial(jax.jit, static_argnums=(0))
+    def step(self, key, state, action, params=None):
+        new_step = state.step + 1
+        change_to_new_friction = new_step % self.change_every == 0
+
+        friction_rng, key = jax.random.split(key)
+        new_friction_exp = jax.random.uniform(friction_rng, minval=self.lower_friction_exp, maxval=self.upper_friction_exp)
+        new_friction = 10 ** new_friction_exp
+
+        def new_friction_reset():
+            pass
+
+
+        return jax.lax.cond(
+            change_to_new_friction,
+            lambda: new_friction_reset(),
+            lambda: self._env.step(key, state.env_state, action, params)
+        )
+

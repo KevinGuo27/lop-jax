@@ -88,11 +88,6 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
             params=network_params,
             tx=tx,
         )
-        # update_and_reinit = partial(train_state.update_and_reinit,
-        #                                         replacement_rate=args.replacement_rate,
-        #                                         decay_rate=args.decay_rate,
-        #                                         maturity_threshold=args.maturity_threshold)
-        # train_state = train_state.replace(update_and_reinit=update_and_reinit)
         initial_train_state = train_state
 
         # INIT ENV
