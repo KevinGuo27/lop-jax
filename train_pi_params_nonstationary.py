@@ -1,7 +1,7 @@
 from functools import partial
 import inspect
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Union
 
 import chex
 from flax.training.train_state import TrainState
@@ -16,14 +16,10 @@ import orbax.checkpoint
 from rlopt.agents import ActorCriticAgent, PPOAgent, Transition
 from rlopt.cbp import ContinualBackpropTrainState
 from rlopt.config import NonStationaryPolicyHyperparams
-from rlopt.envs import load_nonstationary_env, load_env, is_continuous
+from rlopt.envs import load_nonstationary_env, load_env, is_continuous, nonstationary_to_stationary_mapping
 from rlopt.file_system import get_results_path
 from rlopt.models import ActorCritic
 
-
-nonstationary_to_stationary_mapping = {
-    'slippery_ant': 'ant'
-}
 
 def filter_period_first_dim(x, n: int):
     if isinstance(x, jnp.ndarray) or isinstance(x, np.ndarray):
