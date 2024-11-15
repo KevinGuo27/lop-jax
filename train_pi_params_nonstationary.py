@@ -36,7 +36,9 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
     num_epochs = (
         num_updates // (args.change_every // args.num_steps // args.num_envs)
     )
-    env, env_params = load_env(nonstationary_to_stationary_mapping[args.env], gamma=args.gamma)
+
+    rng, _rng = jax.random.split(rng)
+    env, env_params = load_nonstationary_env(rng, args.env, gamma=args.gamma)
 
     action_space = env.action_space(env_params)
     if isinstance(action_space, Box):
@@ -45,6 +47,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
         action_dim = action_shape[0]
     elif isinstance(action_space, Discrete):
         action_dim = action_space.n
+
     network = ActorCritic(is_continuous=is_continuous(action_space),
                           action_dim=action_dim,
                           h_dims=(args.hidden_size,) * (args.num_hidden_layers + 1))
@@ -103,7 +106,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
             def _update_step(runner_state, unused):
                 # COLLECT TRAJECTORIES
                 def _env_step(runner_state, unused):
-                    env, env_params, train_state, env_state, last_obs, rng = runner_state
+                    train_state, env_state, last_obs, rng = runner_state
 
                     # SELECT ACTION
                     rng, _rng = jax.random.split(rng)
@@ -116,7 +119,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
                     transition = Transition(
                         done, action, value, reward, log_prob, last_obs, info
                     )
-                    runner_state = (env, env_params, train_state, env_state, obsv, rng)
+                    runner_state = (train_state, env_state, obsv, rng)
                     return runner_state, transition
 
                 runner_state, traj_batch = jax.lax.scan(
@@ -124,7 +127,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
                 )
 
                 # CALCULATE ADVANTAGE
-                env, env_params, train_state, env_state, last_obs, rng = runner_state
+                train_state, env_state, last_obs, rng = runner_state
                 _, last_val, _ = network.apply(train_state.params, last_obs)
 
                 advantages, targets = agent.target(traj_batch, last_val)
@@ -182,7 +185,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
                     )
 
                     rng, _rng = jax.random.split(rng)
-                    (_, train_state), total_loss = jax.lax.scan(
+                    (train_state, _rng), total_loss = jax.lax.scan(
                         _update_minbatch, (train_state, _rng), minibatches
                     )
                     update_state = (train_state, traj_batch, advantages, targets, rng)
@@ -207,7 +210,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
                             print(f"global step={timesteps[t]}, episodic return={return_values[t]}")
                     jax.debug.callback(callback, metric)
 
-                runner_state = (env, env_params, train_state, env_state, last_obs, rng)
+                runner_state = (train_state, env_state, last_obs, rng)
 
                 return runner_state, metric
 
@@ -216,21 +219,10 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
             )
             metric = jax.tree.map(updates_filter, metric)
 
-            (train_state, env_state, obsv, rng) = runner_state
-
-            # After an epoch, we reinit a new env based on our nonstationarity
-            rng, _rng = jax.random.split(rng)
-            env, env_params = load_nonstationary_env(rng, args.env, gamma=args.gamma)
-            # INIT ENV
-            rng, _rng = jax.random.split(rng)
-            reset_rng = jax.random.split(_rng, args.num_envs)
-            obsv, env_state = env.reset(reset_rng, env_params)
-
-            runner_state = (train_state, env_state, obsv, rng)
             return runner_state, metric
 
         rng, _rng = jax.random.split(rng)
-        runner_state = (env, env_params, train_state, env_state, obsv, _rng)
+        runner_state = (train_state, env_state, obsv, _rng)
         runner_state, metric = jax.lax.scan(
             _epoch_step, runner_state, None, num_epochs
         )

@@ -7,7 +7,7 @@ import gymnax
 from gymnax import EnvParams
 import jax
 
-from .wrappers import BraxGymnaxWrapper, LogWrapper, ClipAction, VecEnv, SlipperyAntWrapper
+from .wrappers import BraxGymnaxWrapper, LogWrapper, ClipAction, VecEnv, NonstationaryFrictionBraxWrapper
 
 
 def load_brax_env(env_str: str):
@@ -39,17 +39,10 @@ def load_nonstationary_env(rng: chex.PRNGKey, env_str: str, gamma: float,
                            change_every: int = int(1e6)):
     assert env_str in ['slippery_ant']
     if env_str == 'slippery_ant':
-        env_str = nonstationary_to_stationary_mapping[env_str]
-        friction_rng, key = jax.random.split(rng)
-        new_friction_exp = jax.random.uniform(friction_rng, minval=-4, maxval=4)
-        new_friction = 10 ** new_friction_exp
-
-        # TODO: change sys.geom_friction
-        env, env_params = load_brax_env(env_str)
-        sys = env._unwrapped._env.unwrapped.sys
-        env._unwrapped._env.unwrapped.sys = sys.tree_replace(
-            {'geom_friction': sys.geom_friction.at[:, 0].set(new_friction)}
-        )
+        env_str = 'ant'
+        env = NonstationaryFrictionBraxWrapper(env_str, change_every=change_every)
+        env_params = EnvParams(max_steps_in_episode=env.max_steps_in_episode)
+        env = ClipAction(env)
     else:
         raise NotImplementedError
 

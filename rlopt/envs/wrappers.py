@@ -3,6 +3,8 @@ from functools import partial
 
 from brax import envs
 from brax.envs.wrappers.training import EpisodeWrapper, AutoResetWrapper
+from brax.base import System
+from brax.envs.base import State
 import chex
 from flax import struct
 import jax
@@ -148,39 +150,88 @@ class SlipperyAntState:
     step: chex.Array
 
 
-class SlipperyAntWrapper(GymnaxWrapper):
+class AutoResetTimeStepWrapper(AutoResetWrapper):
+    def reset(self, rng: jax.Array) -> State:
+        state = super().reset(rng)
+        state.info['timestep'] = 0
+        return state
+
+    def step(self, state: State, action: jax.Array) -> State:
+        state = super().step(state, action)
+        state.info['timestep'] += 1
+        return state
+
+
+class NonstationaryFrictionBraxWrapper(BraxGymnaxWrapper):
     
-    def __init__(self, env, change_every: int = int(1e6),
+    def __init__(self, env_name, backend="positional",
+                 change_every: int = int(1e5),
                  lower_friction_exp: float = -4,
                  upper_friction_exp: float = 4):
-        super().__init__(env)
         self.change_every = change_every
         self.lower_friction_exp = lower_friction_exp
         self.upper_friction_exp = upper_friction_exp
 
-    @partial(jax.jit, static_argnums=(0))
-    def reset(
-            self, key: chex.PRNGKey, params: Optional[environment.EnvParams] = None
-    ) -> Tuple[chex.Array, SlipperyAntState]:
-        obs, env_state = self._env.reset(key, params)
-        return obs, SlipperyAntState(env_state=env_state, step=jnp.zeros([], dtype=int))
+        env = envs.get_environment(env_name=env_name, backend=backend)
+        self.max_steps_in_episode = 1000
+        env = EpisodeWrapper(env, episode_length=self.max_steps_in_episode, action_repeat=1)
+        env = AutoResetTimeStepWrapper(env)
+        self._env = env
+        self.action_size = env.action_size
+        self.observation_size = (env.observation_size,)
 
-    @partial(jax.jit, static_argnums=(0))
-    def step(self, key, state, action, params=None):
-        new_step = state.step + 1
-        change_to_new_friction = new_step % self.change_every == 0
+    def env_fn(self, sys: System):
+        env = self._env
+        env.unwrapped.sys = sys
+        return env
 
-        friction_rng, key = jax.random.split(key)
-        new_friction_exp = jax.random.uniform(friction_rng, minval=self.lower_friction_exp, maxval=self.upper_friction_exp)
-        new_friction = 10 ** new_friction_exp
+    def reset(self, rng: chex.PRNGKey, params=None):
+        state = self._env.reset(rng)
+        sys = self._env.unwrapped.sys
 
-        def new_friction_reset():
-            pass
+        state.info['sys_variation'] = {'geom_friction': jnp.array(sys.geom_friction)}
+        return state.obs, state
 
+    def step(self, rng: chex.PRNGKey, state: State, action: jnp.ndarray, params=None):
+        sys = self._env.unwrapped.sys
+        new_timestep = state.info['timestep'] + 1
 
-        return jax.lax.cond(
-            change_to_new_friction,
-            lambda: new_friction_reset(),
-            lambda: self._env.step(key, state.env_state, action, params)
+        def sample_new_friction(rng, s, a):
+            friction_rng, rng = jax.random.split(rng)
+            new_friction_exp = jax.random.uniform(friction_rng,
+                                                  minval=self.lower_friction_exp,
+                                                  maxval=self.upper_friction_exp)
+            new_friction = 10 ** new_friction_exp
+            new_geom_friction = s.info['sys_variation']['geom_friction'].at[:, 0].set(new_friction)
+            new_variation = {'geom_friction': new_geom_friction}
+
+            new_sys = sys.replace(**new_variation)
+            new_env = self.env_fn(new_sys)
+
+            s_prime = new_env.step(s, a)
+
+            reset_rng, rng = jax.random.split(rng)
+            new_s = new_env.reset(reset_rng)
+            # TODO: test this somehow. I THINK this should be correct in terms of the done.
+            new_s = new_s.replace(done=s_prime.done, reward=s_prime.reward)
+            new_s.info['sys_variation'] = new_variation
+
+            return new_s
+
+        def use_same_friction(rng, s, a):
+            new_sys = sys.replace(**s.info['sys_variation'])
+            new_env = self.env_fn(new_sys)
+
+            new_s = new_env.step(s, a)
+            new_s.info['sys_variation'] = s.info['sys_variation']
+            return new_s
+
+        reset = new_timestep % self.change_every == 0
+        next_state = jax.lax.cond(
+            reset,
+            sample_new_friction,
+            use_same_friction,
+            rng, state, action
         )
+        return next_state.obs, next_state, next_state.reward, next_state.done > 0.5, {}
 

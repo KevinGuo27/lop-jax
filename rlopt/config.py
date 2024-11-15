@@ -16,7 +16,7 @@ class Hyperparams(Tap):
 
 class PolicyHyperparams(Hyperparams):
     env: str = 'CartPole-v1'
-    alg: Literal['actor_critic', 'ppo'] = 'actor_critic'
+    alg: Literal['actor_critic', 'ppo'] = 'ppo'
     lr: float = 2.5e-4
     hidden_size: int = 32
     num_hidden_layers: int = 1
