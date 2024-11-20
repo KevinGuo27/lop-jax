@@ -76,12 +76,12 @@ class ContinualBackpropTrainState(TrainState):
             return ('kernel' in tree) and ('bias' in tree)
 
         def filter_input_and_bias(k, x):
-            if k[-1].key[-1] != '0':
+            if k[-1].key[-1] != '0' and k[-1].key != 'log_std':
                 # we do shape[0], since we index layer + 1
                 return jnp.zeros(x['kernel'].shape[0])
 
         def layer_count(k, x):
-            if k[-1].key[-1] != '0':
+            if k[-1].key[-1] != '0' and k[-1].key != 'log_std':
                 # we do shape[0], since we index layer + 1
                 return jnp.zeros(1)
 
@@ -108,8 +108,8 @@ class ContinualBackpropTrainState(TrainState):
                           replacement_rate: float = 1e-4,
                           decay_rate: float = 0.99,
                           maturity_threshold: float = int(1e4)):
-        assert jax.tree.flatten(activations)[0][0].shape[0] == 1, 'Not implemented for the batch online setting!'
-        activations = jax.tree.map(lambda x: x[0], activations)
+        # we take the mean over the batch dimension. when num_env == 1, this doesn't matter.
+        activations = jax.tree.map(lambda x: jnp.mean(x, axis=0), activations)
 
         # First we update our ages
         new_ages = jax.tree.map(lambda x: x + 1, self.ages)
@@ -156,7 +156,10 @@ class ContinualBackpropTrainState(TrainState):
         # helper fn to reinit params based on replacement_mask
         def replace_in_and_out(keys, og_params, rng,
                                rand_init_kernel: bool = True):
-            final_key = keys[-1].key  # either kernel or bias
+            final_key = keys[-1].key  # either kernel or bias or log_std, which we ignore
+            if final_key == 'log_std':
+                return og_params
+
             layer_key = keys[-2].key
 
             rmask = replacement_mask

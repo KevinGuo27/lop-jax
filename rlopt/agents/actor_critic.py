@@ -41,10 +41,10 @@ class ActorCriticAgent:
         self.network = network
 
     def act(self, rng: chex.PRNGKey, params: dict, obs: jnp.ndarray):
-        pi, value, _ = self.network.apply(params, obs)
+        pi, value, activations = self.network.apply(params, obs)
         action = pi.sample(seed=rng)
         log_prob = pi.log_prob(action)
-        return value, action, log_prob
+        return value, action, log_prob, activations
 
     def loss(self, params, traj_batch, returns, value_targets):
         pi, value, activations = self.network.apply(params, traj_batch.obs)

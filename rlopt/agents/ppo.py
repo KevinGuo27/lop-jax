@@ -23,15 +23,14 @@ class PPOAgent(ActorCriticAgent):
             obs: chex.Array):
 
         # SELECT ACTION
-        pi, value, _ = self.network.apply(params, obs)
+        pi, value, activations = self.network.apply(params, obs)
         action = pi.sample(seed=rng)
         log_prob = pi.log_prob(action)
 
-        return value, action, log_prob
+        return value, action, log_prob, activations
 
     def loss(self, params: dict, traj_batch: Transition, gae: jnp.ndarray, targets: jnp.ndarray):
         # RERUN NETWORK
-        intermediates = None
         pi, value, activations = self.network.apply(params, traj_batch.obs)
 
         log_prob = pi.log_prob(traj_batch.action)

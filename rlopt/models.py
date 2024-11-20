@@ -41,6 +41,7 @@ class Actor(nn.Module):
 
         if self.continuous:
             actor_logtstd = self.param("log_std", nn.initializers.zeros, (self.action_dim,))
+            activations['log_std'] = None
             pi = distrax.MultivariateNormalDiag(out_i_plus_1, jnp.exp(actor_logtstd))
         else:
             pi = distrax.Categorical(logits=out_i_plus_1)

@@ -103,7 +103,15 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
                 # SELECT ACTION
                 rng, _rng = jax.random.split(rng)
-                value, action, log_prob = agent.act(_rng, train_state.params, last_obs)
+                value, action, log_prob, activations = agent.act(_rng, train_state.params, last_obs)
+
+                if args.cont_backprop:
+                    rng, _rng = jax.random.split(rng)
+                    train_state = train_state.update_and_reinit(_rng,
+                                                                activations,
+                                                                replacement_rate=args.replacement_rate,
+                                                                decay_rate=args.decay_rate,
+                                                                maturity_threshold=args.maturity_threshold)
 
                 # STEP ENV
                 rng, _rng = jax.random.split(rng)
@@ -141,14 +149,6 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
                     train_state = train_state.apply_gradients(grads=grads)
 
-                    if args.cont_backprop:
-                        activations = losses_and_activations[-1]
-                        rng, _rng = jax.random.split(rng)
-                        train_state = train_state.update_and_reinit(_rng,
-                                                                    activations,
-                                                                    replacement_rate=args.replacement_rate,
-                                                                    decay_rate=args.decay_rate,
-                                                                    maturity_threshold=args.maturity_threshold)
 
                     loss_info = (total_loss, losses_and_activations[:-1])
 
