@@ -77,15 +77,15 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
     updates_filter = partial(filter_period_first_dim, n=args.updates_log_freq)
 
     def train(rng):
-        if args.anneal_lr:
+        if args.no_anneal_lr:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                optax.adam(learning_rate=linear_schedule, eps=1e-5),
+                optax.adam(args.lr, eps=1e-5),
             )
         else:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                optax.adam(args.lr, eps=1e-5),
+                optax.adam(learning_rate=linear_schedule, eps=1e-5),
             )
         train_state = tstate_class.create(
             apply_fn=network.apply,
