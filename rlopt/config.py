@@ -41,7 +41,7 @@ class PolicyHyperparams(Hyperparams):
     vf_coeff: float = 0.5
     clip_eps: float = 0.2
     max_grad_norm: float = 0.5
-    anneal_lr: bool = True
+    no_anneal_lr: bool = False
     adv_lambda: float = 0.95
     update_epochs: int = 4
 

@@ -73,15 +73,15 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
     updates_filter = partial(filter_period_first_dim, n=args.updates_log_freq)
 
     def train(rng):
-        if args.anneal_lr:
+        if args.no_anneal_lr:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                adam_with_param_counts(learning_rate=linear_schedule, eps=1e-5),
+                adam_with_param_counts(learning_rate=args.lr, eps=1e-5),
             )
         else:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                adam_with_param_counts(learning_rate=args.lr, eps=1e-5),
+                adam_with_param_counts(learning_rate=linear_schedule, eps=1e-5),
             )
         train_state = tstate_class.create(
             apply_fn=network.apply,
@@ -148,7 +148,6 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                     total_loss, losses_and_activations = loss_info
 
                     train_state = train_state.apply_gradients(grads=grads)
-
 
                     loss_info = (total_loss, losses_and_activations[:-1])
 
