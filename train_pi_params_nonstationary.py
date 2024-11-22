@@ -218,17 +218,22 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
             )
             metric = jax.tree.map(updates_filter, metric)
 
-            return runner_state, metric
+            return runner_state, (metric, runner_state)
 
         rng, _rng = jax.random.split(rng)
-        runner_state = (train_state, env_state, obsv, _rng)
-        runner_state, metric = jax.lax.scan(
-            _epoch_step, runner_state, None, num_epochs
+        init_runner_state = (train_state, env_state, obsv, _rng)
+        final_runner_state, (metric, all_runner_states) = jax.lax.scan(
+            _epoch_step, init_runner_state, None, num_epochs
         )
 
-        final_train_state = runner_state[0]
+        final_train_state = final_runner_state[0]
+        runner_states = {
+            'initial_runner_state': init_runner_state,
+            'intermediate_runner_states': all_runner_states,
+            'final_runner_state': final_runner_state
+        }
 
-        return initial_train_state, final_train_state, metric
+        return initial_train_state, final_train_state, metric, runner_states
 
     return train
 
@@ -257,7 +262,7 @@ def run_train(passed_in_args: Union[dict, NonStationaryPolicyHyperparams] = None
 
     vmapped_train_fn = jax.vmap(jitted_train_fn)
 
-    init_train_states, final_train_states, metrics = vmapped_train_fn(train_rngs)
+    init_train_states, final_train_states, metrics, runner_states = vmapped_train_fn(train_rngs)
 
     # remove methods from args
     dict_args = args.as_dict()
@@ -268,6 +273,7 @@ def run_train(passed_in_args: Union[dict, NonStationaryPolicyHyperparams] = None
     all_results = {
         'init_train_state': init_train_states,
         'final_train_state': final_train_states,
+        'runner_states': runner_states,
         'metric': metrics,
         'args': dict_args
     }
