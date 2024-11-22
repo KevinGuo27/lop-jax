@@ -1,7 +1,7 @@
 from functools import partial
 import inspect
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Union
 
 import chex
 from flax.training.train_state import TrainState

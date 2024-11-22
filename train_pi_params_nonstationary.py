@@ -19,6 +19,7 @@ from rlopt.config import NonStationaryPolicyHyperparams
 from rlopt.envs import load_nonstationary_env, load_env, is_continuous, nonstationary_to_stationary_mapping
 from rlopt.file_system import get_results_path
 from rlopt.models import ActorCritic
+from rlopt.utils import adam_with_param_counts
 
 
 def filter_period_first_dim(x, n: int):
@@ -80,12 +81,12 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
         if args.no_anneal_lr:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                optax.adam(args.lr, eps=1e-5),
+                adam_with_param_counts(learning_rate=args.lr, eps=1e-5),
             )
         else:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                optax.adam(learning_rate=linear_schedule, eps=1e-5),
+                adam_with_param_counts(learning_rate=linear_schedule, eps=1e-5),
             )
         train_state = tstate_class.create(
             apply_fn=network.apply,
