@@ -4,7 +4,9 @@ from typing import Optional, Any
 import chex
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
+from jax import numpy as jnp
 from optax import ScaleByAdamState, GradientTransformation, ScalarOrSchedule, scale_by_learning_rate
 from optax import tree_utils as otu
 from optax._src import numerics, utils
@@ -121,3 +123,9 @@ def adam_with_param_counts(
       ),
       scale_by_learning_rate(learning_rate),
   )
+
+
+def numpyify(leaf):
+    if isinstance(leaf, jnp.ndarray):
+        return np.array(leaf)
+    return leaf

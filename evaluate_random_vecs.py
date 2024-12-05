@@ -1,7 +1,9 @@
 from functools import partial
+import time
 from pathlib import Path
 
 import chex
+from flax.training import orbax_utils
 from gymnax.environments.spaces import Box, Discrete
 import jax
 import jax.numpy as jnp
@@ -14,6 +16,9 @@ from rlopt.cbp import generate_seeds_for_pytree
 from rlopt.envs import load_nonstationary_env, is_continuous
 from rlopt.models import ActorCritic
 from rlopt.policy_eval import policy_eval
+from rlopt.utils import numpyify
+
+from definitions import ROOT_DIR
 
 
 def get_random_params(rng: chex.PRNGKey, params: dict):
@@ -122,13 +127,16 @@ def dstack_product(x, y):
 
 if __name__ == "__main__":
     seed = 2024
-    n_eval_episodes = 30
-    episodes_per_batch = 20
+    n_eval_episodes = 1
+    # n_eval_episodes = 10
+    episodes_per_batch = 1
+    # episodes_per_batch = 10
 
     tau_start = -1
     tau_end = 1
     # DEBUGGING
-    n_taus = 20
+    n_taus = 3
+    # n_taus = 20
     product_n_taus = int(n_taus**2)
 
     tau_array = jnp.linspace(tau_start, tau_end, num=n_taus)
@@ -138,11 +146,13 @@ if __name__ == "__main__":
 
     # CBP
     ckpt_dirs = {
-        'cbp': Path("/Users/ruoyutao/Documents/rl-opt/results/slippery_ant_cbp/slippery_ant_ppo_seed(2024)_time(20241123-015247)_8d241715c04a80294c39f2b1adfb1c1d_np"),
+        'cbp': Path(ROOT_DIR, "results/slippery_ant_cbp/slippery_ant_ppo_seed(2024)_time(20241123-015247)_8d241715c04a80294c39f2b1adfb1c1d_np"),
         # 'ppo': Path("/Users/ruoyutao/Documents/rl-opt/results/slippery_ant/slippery_ant_ppo_seed(2024)_time(20241122-055452)_2b5761a2fa5b5664da2a7e9de0cbfd85_np")
     }
 
     rng = jax.random.PRNGKey(seed)
+
+    res_dict = {}
 
     for k, fpath in ckpt_dirs.items():
         orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
@@ -214,6 +224,7 @@ if __name__ == "__main__":
         vmapped_pe_fn = jax.vmap(policy_eval_fn, in_axes=[None, None, 0, 0])
 
         # TODO: scan w/ tqdm
+        @jax.jit
         @scan_tqdm(product_n_taus)
         def pe_iteration(rng, x):
             i, inp = x
@@ -231,7 +242,21 @@ if __name__ == "__main__":
         _, dataset = jax.lax.scan(
             pe_iteration, pe_rng, (jnp.arange(product_n_taus), inp), product_n_taus
         )
-        print()
+
+        res_dict[k] = {'dataset': dataset, 'path': fpath}
+
+
+    res_study_dir = Path(ROOT_DIR, 'results', f'{args.env}_random_vecs')
+    res_study_dir.mkdir(exist_ok=True)
+    time_str = time.strftime("%Y%m%d-%H%M%S")
+    res_dir = res_study_dir / f'collected_dataset_{time_str}'
+
+    res_dict = jax.tree.map(numpyify, res_dict)
+    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+    save_args = orbax_utils.save_args_from_target(res_dict)
+
+    print(f"Saving results to {res_dir}")
+    orbax_checkpointer.save(res_dir, res_dict, save_args=save_args)
 
 
 

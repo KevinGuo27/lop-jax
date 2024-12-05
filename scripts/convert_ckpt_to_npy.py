@@ -2,9 +2,9 @@ from pathlib import Path
 
 from flax.training import orbax_utils
 import jax
-import jax.numpy as jnp
-import numpy as np
 import orbax.checkpoint
+
+from rlopt.utils import numpyify
 
 if __name__ == "__main__":
 
@@ -13,11 +13,6 @@ if __name__ == "__main__":
 
     orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
     restored = orbax_checkpointer.restore(ckpt_dir)
-
-    def numpyify(leaf):
-        if isinstance(leaf, jnp.ndarray):
-            return np.array(leaf)
-        return leaf
 
     restored_np = jax.tree.map(numpyify, restored)
     ckpt_dir_np = ckpt_dir.parent / (ckpt_dir.stem + '_np')
