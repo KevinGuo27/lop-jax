@@ -243,7 +243,7 @@ if __name__ == "__main__":
             pe_iteration, pe_rng, (jnp.arange(product_n_taus), inp), product_n_taus
         )
 
-        res_dict[k] = {'dataset': dataset, 'path': fpath}
+        res_dict[k] = {'dataset': dataset, 'path': str(fpath)}
 
 
     res_study_dir = Path(ROOT_DIR, 'results', f'{args.env}_random_vecs')
