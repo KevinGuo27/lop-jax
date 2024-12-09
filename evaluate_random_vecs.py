@@ -152,7 +152,7 @@ if __name__ == "__main__":
 
     rng = jax.random.PRNGKey(seed)
 
-    res_dict = {}
+    res_dict = {'taus': taus}
 
     for k, fpath in ckpt_dirs.items():
         orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
