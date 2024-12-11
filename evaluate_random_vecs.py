@@ -127,16 +127,16 @@ def dstack_product(x, y):
 
 if __name__ == "__main__":
     seed = 2024
-    n_eval_episodes = 1
-    # n_eval_episodes = 10
-    episodes_per_batch = 1
-    # episodes_per_batch = 10
+    # n_eval_episodes = 1
+    n_eval_episodes = 10
+    # episodes_per_batch = 1
+    episodes_per_batch = 10
 
     tau_start = -1
     tau_end = 1
     # DEBUGGING
-    n_taus = 3
-    # n_taus = 20
+    # n_taus = 3
+    n_taus = 20
     product_n_taus = int(n_taus**2)
 
     tau_array = jnp.linspace(tau_start, tau_end, num=n_taus)
@@ -211,8 +211,9 @@ if __name__ == "__main__":
             agent = ActorCriticAgent(network, args)
 
         policy_eval_fn = jax.jit(partial(policy_eval, env=env, env_params=env_params,
-                                 agent=agent, n_episodes=n_eval_episodes,
-                                 episodes_per_batch=episodes_per_batch))
+                                         agent=agent, n_episodes=n_eval_episodes,
+                                         episodes_per_batch=episodes_per_batch,
+                                         debug=False))
 
         rng, reset_rng = jax.random.split(rng)
         reset_rng = reset_rng[None, :]
@@ -225,7 +226,7 @@ if __name__ == "__main__":
 
         # TODO: scan w/ tqdm
         @jax.jit
-        @scan_tqdm(product_n_taus)
+        @scan_tqdm(product_n_taus, print_rate=1)
         def pe_iteration(rng, x):
             i, inp = x
             env_state, obs, pi_params = inp
