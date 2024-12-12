@@ -128,7 +128,7 @@ def dstack_product(x, y):
 if __name__ == "__main__":
     seed = 2024
     # n_eval_episodes = 1
-    n_eval_episodes = 10
+    n_eval_episodes = 30
     # episodes_per_batch = 1
     episodes_per_batch = 10
 
@@ -146,8 +146,9 @@ if __name__ == "__main__":
 
     # CBP
     ckpt_dirs = {
-        'cbp': Path(ROOT_DIR, "results/slippery_ant_cbp/slippery_ant_ppo_seed(2024)_time(20241123-015247)_8d241715c04a80294c39f2b1adfb1c1d_np"),
         'ppo': Path(ROOT_DIR, "results/slippery_ant/slippery_ant_ppo_seed(2024)_time(20241122-055452)_2b5761a2fa5b5664da2a7e9de0cbfd85_np"),
+        'cbp': Path(ROOT_DIR,
+                    "results/slippery_ant_cbp/slippery_ant_ppo_seed(2024)_time(20241123-015247)_8d241715c04a80294c39f2b1adfb1c1d_np"),
     }
 
     rng = jax.random.PRNGKey(seed)
@@ -155,7 +156,7 @@ if __name__ == "__main__":
     res_dict = {'taus': taus}
 
     for k, fpath in ckpt_dirs.items():
-        print(f"Parsing results for {k}")
+        print(f"Gathering things for {k}")
         orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
         restored = orbax_checkpointer.restore(fpath)
         args = restored['args']
@@ -232,20 +233,16 @@ if __name__ == "__main__":
         @jax.jit
         @scan_tqdm(product_n_taus, print_rate=1)
         def pe_iteration(rng, x):
-            i, inp = x
-            env_state, obs, pi_params = inp
+            i, pi_params = x
             rng, _rng = jax.random.split(rng)
             _rngs = jax.random.split(_rng, n_params)
-            pe_out = vmapped_pe_fn(env_state, obs, _rngs, pi_params)
+            pe_out = vmapped_pe_fn(_rngs, pi_params)
             return rng, pe_out
 
         rng, pe_rng = jax.random.split(rng)
-        env_states = jax.tree.map(lambda x: x[None, ...].repeat(product_n_taus, axis=0), env_state)
-        obses = jax.tree.map(lambda x: x[None, ...].repeat(product_n_taus, axis=0), obsv)
-        inp = (env_states, obses, augmented_params)
 
         _, dataset = jax.lax.scan(
-            pe_iteration, pe_rng, (jnp.arange(product_n_taus), inp), product_n_taus
+            pe_iteration, pe_rng, (jnp.arange(product_n_taus), augmented_params), product_n_taus
         )
 
         res_dict[k] = {'dataset': dataset, 'path': str(fpath)}
