@@ -147,7 +147,7 @@ if __name__ == "__main__":
     # CBP
     ckpt_dirs = {
         'cbp': Path(ROOT_DIR, "results/slippery_ant_cbp/slippery_ant_ppo_seed(2024)_time(20241123-015247)_8d241715c04a80294c39f2b1adfb1c1d_np"),
-        # 'ppo': Path("/Users/ruoyutao/Documents/rl-opt/results/slippery_ant/slippery_ant_ppo_seed(2024)_time(20241122-055452)_2b5761a2fa5b5664da2a7e9de0cbfd85_np")
+        'ppo': Path(ROOT_DIR, "results/slippery_ant/slippery_ant_ppo_seed(2024)_time(20241122-055452)_2b5761a2fa5b5664da2a7e9de0cbfd85_np"),
     }
 
     rng = jax.random.PRNGKey(seed)
@@ -155,6 +155,7 @@ if __name__ == "__main__":
     res_dict = {'taus': taus}
 
     for k, fpath in ckpt_dirs.items():
+        print(f"Parsing results for {k}")
         orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
         restored = orbax_checkpointer.restore(fpath)
         args = restored['args']
@@ -210,19 +211,22 @@ if __name__ == "__main__":
         else:
             agent = ActorCriticAgent(network, args)
 
-        policy_eval_fn = jax.jit(partial(policy_eval, env=env, env_params=env_params,
-                                         agent=agent, n_episodes=n_eval_episodes,
-                                         episodes_per_batch=episodes_per_batch,
-                                         debug=False))
+        @jax.jit
+        def policy_eval_random_reset(rng, pi_params):
+            rng, reset_rng = jax.random.split(rng)
+            reset_rng = reset_rng[None, :]
+            obsv, env_state = env.reset(reset_rng, env_params)
 
-        rng, reset_rng = jax.random.split(rng)
-        reset_rng = reset_rng[None, :]
-        obsv, env_state = env.reset(reset_rng, env_params)
+            obsv = obsv[0]
+            env_state = jax.tree.map(lambda x: x[0], env_state)
 
-        obsv = obsv[0]
-        env_state = jax.tree.map(lambda x: x[0], env_state)
+            policy_eval_fn = partial(policy_eval, env=env, env_params=env_params,
+                                     agent=agent, n_episodes=n_eval_episodes,
+                                     episodes_per_batch=episodes_per_batch,
+                                     debug=False)
+            return policy_eval_fn(env_state, obsv, rng, pi_params)
 
-        vmapped_pe_fn = jax.vmap(policy_eval_fn, in_axes=[None, None, 0, 0])
+        vmapped_pe_fn = jax.vmap(policy_eval_random_reset, in_axes=0)
 
         # TODO: scan w/ tqdm
         @jax.jit

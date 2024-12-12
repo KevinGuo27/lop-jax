@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import orbax.checkpoint
 from scipy.interpolate import griddata
@@ -7,7 +8,7 @@ from scipy.interpolate import griddata
 
 if __name__ == "__main__":
     key = 'cbp'
-    ckpt_dir = Path('/Users/ruoyutao/Documents/rl-opt/results/slippery_ant_random_vecs/collected_dataset_20241209-124902')
+    ckpt_dir = Path('/Users/ruoyutao/Documents/rl-opt/results/slippery_ant_random_vecs/collected_dataset_20241209-160817')
 
     orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
     restored = orbax_checkpointer.restore(ckpt_dir)
@@ -32,6 +33,17 @@ if __name__ == "__main__":
 
     grid_return_mean = griddata(taus, mean_disc_returns, (grid_x, grid_y), method='cubic')
 
-    
+    fig, axes = plt.subplots(mean_disc_returns.shape[-1], 1, figsize=(10, 40))
 
+    for i in range(mean_disc_returns.shape[-1]):
+        rax = axes[i]
+        # c1 = rax.contourf(grid_x, grid_y, grid_return_mean, levels=20, cmap="viridis",
+        #                   vmin=ret_min, vmax=ret_max)
+        c1 = rax.contourf(grid_x, grid_y, grid_return_mean[..., i], levels=20, cmap="viridis")
+        cbar_1 = fig.colorbar(c1, ax=rax, label='returns')
+        rax.legend()
+        rax.set_title(f'Returns for {key}, {i}th change')
+
+    fig.tight_layout()
+    plt.show()
     print()
