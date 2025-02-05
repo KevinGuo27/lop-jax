@@ -1,17 +1,17 @@
 from functools import partial
 from pathlib import Path
 
-import chex
 from gymnax.environments.spaces import Box, Discrete
 import jax
 import jax.numpy as jnp
 import numpy as np
 import orbax.checkpoint
 
+from rlopt.agents import ActorCriticAgent, PPOAgent
 from rlopt.envs import load_env, is_continuous
-from rlopt.agents import ActorCriticAgent, PPOAgent, Transition
 from rlopt.config import PolicyEvalHyperparams, PolicyHyperparams
 from rlopt.models import ActorCritic
+from rlopt.policy_eval import policy_eval
 
 
 def first_nonzero_element(arr, axis=-1):
@@ -54,71 +54,17 @@ def load_train_state(fpath: Path):
     return env, env_params, args, agent, ts_dict['params'], {'metric': restored['metric']}
 
 
-def env_step(runner_state, unused, agent, episodes, env, env_params):
-    network_params, env_state, last_obs, last_done, rng = runner_state
-    rng, _rng = jax.random.split(rng)
-    value, action, log_prob = agent.act(_rng, network_params, last_obs)
-
-    # STEP ENV
-    rng, _rng = jax.random.split(rng)
-    rng_step = jax.random.split(_rng, episodes)
-    obsv, env_state, reward, done, info = env.step(rng_step, env_state, action, env_params)
-    transition = Transition(
-        done, action, value, reward, log_prob, last_obs, info
-    )
-    runner_state = (network_params, env_state, obsv, done, rng)
-    return runner_state, transition
-
-
 def make_policy_eval(args: PolicyEvalHyperparams):
-    n_batches = args.n_episodes // args.episodes_per_batch
     env, env_params, train_args, agent, batch_train_state, info = load_train_state(args.checkpoint_path)
 
-    _env_step = partial(env_step, agent=agent, episodes=args.episodes_per_batch, env=env, env_params=env_params)
+    policy_eval_fn = partial(policy_eval,
+                             env=env, env_params=env_params, agent=agent,
+                             max_episode_steps=args.max_episode_steps,
+                             n_episodes=args.n_episodes,
+                             episodes_per_batch=args.episodes_per_batch,
+                             debug=args.debug)
 
-    def policy_eval(env_state, obs: jnp.ndarray, rng: chex.PRNGKey, pi_params: dict):
-        """
-        Policy eval evaluates a policy (params) from the starting env_state.
-        """
-        def _run_episode(runner_state, i):
-            new_rs, traj_batch = jax.lax.scan(
-                _env_step, runner_state, jnp.arange(args.max_episode_steps), args.max_episode_steps
-            )
-
-            _, _, last_obs, last_done, rng = new_rs
-            _, last_val = agent.network.apply(pi_params, last_obs)
-
-            xtra = {}
-            if train_args.alg == 'ppo':
-                # TODO: currently this is done with values predicted from the
-                # interpolated value func. We might want to do it from either ends of the interpolation
-                advantages, gae = agent.target(traj_batch, last_val)
-                xtra['advantages'] = advantages
-                xtra['gae'] = gae
-
-            if args.debug:
-                jax.debug.print("Running episode {}", i)
-
-            # same runner state going thru, except for rng
-            next_runner_state = runner_state[:-1] + (rng, )
-            return next_runner_state, (traj_batch, xtra)
-
-        runner_state = (
-            pi_params,
-            jax.tree.map(lambda x: jnp.expand_dims(x, axis=0).repeat(args.episodes_per_batch, axis=0), env_state),
-            obs[None, :].repeat(args.episodes_per_batch, axis=0),
-            jnp.zeros((args.episodes_per_batch), dtype=bool),
-            rng,
-        )
-        runner_state, (traj_batch, xtra_info) = jax.lax.scan(
-            _run_episode, runner_state, jnp.arange(n_batches), n_batches
-        )
-        steps_last_traj_batch = jax.tree.map(lambda x: jnp.swapaxes(x, -1, -2), traj_batch)
-        steps_last_xtra_info = jax.tree.map(lambda x: jnp.swapaxes(x, -1, -2), xtra_info)
-
-        return steps_last_traj_batch, steps_last_xtra_info
-
-    return policy_eval, batch_train_state, train_args, agent, env, env_params, info
+    return policy_eval_fn, batch_train_state, train_args, agent, env, env_params, info
 
 
 def run_and_save_mc_pe(passed_in_args: dict = None,

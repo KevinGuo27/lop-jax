@@ -23,23 +23,15 @@ class PPOAgent(ActorCriticAgent):
             obs: chex.Array):
 
         # SELECT ACTION
-        pi, value = self.network.apply(params, obs)
+        pi, value, activations = self.network.apply(params, obs)
         action = pi.sample(seed=rng)
         log_prob = pi.log_prob(action)
 
-        return value, action, log_prob
+        return value, action, log_prob, activations
 
-    def loss(self, params: dict, traj_batch: Transition, gae: jnp.ndarray, targets: jnp.ndarray,
-             return_intermediates: bool = False):
+    def loss(self, params: dict, traj_batch: Transition, gae: jnp.ndarray, targets: jnp.ndarray):
         # RERUN NETWORK
-        intermediates = None
-        if not return_intermediates:
-            pi, value = self.network.apply(params, traj_batch.obs)
-        else:
-            return_tuple, intermediates = self.network.apply(params, traj_batch.obs, capture_intermediates=True,
-                                        mutable=['intermediates'])
-            pi = return_tuple[0]
-            value = return_tuple[1]
+        pi, value, activations = self.network.apply(params, traj_batch.obs)
 
         log_prob = pi.log_prob(traj_batch.action)
 
@@ -77,10 +69,7 @@ class PPOAgent(ActorCriticAgent):
 
         total_loss += l2_regularization(params, alpha=self.l2_reg_coeff)
 
-        if not return_intermediates:
-            return total_loss, (value_loss, loss_actor, entropy)
-        else:
-            return total_loss, (value_loss, loss_actor, entropy, intermediates)
+        return total_loss, (value_loss, loss_actor, entropy, activations)
 
     def target(self, traj_batch: Transition, last_val: chex.Array):
         # Generalized Advantage Estimation

@@ -1,7 +1,7 @@
 from functools import partial
 import inspect
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Union
 
 import chex
 from flax.training.train_state import TrainState
@@ -14,13 +14,14 @@ import optax
 import orbax.checkpoint
 
 from rlopt.agents import ActorCriticAgent, PPOAgent, Transition
+from rlopt.cbp import ContinualBackpropTrainState
 from rlopt.config import PolicyHyperparams
 from rlopt.envs import load_env, is_continuous
 from rlopt.file_system import get_results_path
 from rlopt.models import ActorCritic
+from rlopt.utils import adam_with_param_counts
 
 
-jax.config.update("jax_disable_jit", True)
 
 def filter_period_first_dim(x, n: int):
     if isinstance(x, jnp.ndarray) or isinstance(x, np.ndarray):
@@ -45,17 +46,15 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
         action_dim = action_space.n
     network = ActorCritic(is_continuous=is_continuous(action_space),
                           action_dim=action_dim,
-                          hidden_size=args.hidden_size)
+                          h_dims=(args.hidden_size,) * (args.num_hidden_layers + 1))
 
     rng, _rng = jax.random.split(rng)
     init_x = jnp.zeros(env.observation_space(env_params).shape)
     network_params = network.init(_rng, init_x)
 
     if args.alg == 'ppo':
-        print("PPO agent bruv")
         agent = PPOAgent(network, args)
     else:
-        print("NOT PPO agent bruv")
         agent = ActorCriticAgent(network, args)
 
     def linear_schedule(count):
@@ -66,21 +65,25 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
         )
         return args.lr * frac
 
+    tstate_class = TrainState
+    if args.cont_backprop:
+        tstate_class = ContinualBackpropTrainState
+
     steps_filter = partial(filter_period_first_dim, n=args.steps_log_freq)
     updates_filter = partial(filter_period_first_dim, n=args.updates_log_freq)
 
     def train(rng):
-        if args.anneal_lr:
+        if args.no_anneal_lr:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                optax.adam(learning_rate=linear_schedule, eps=1e-5),
+                adam_with_param_counts(learning_rate=args.lr, eps=1e-5),
             )
         else:
             tx = optax.chain(
                 optax.clip_by_global_norm(args.max_grad_norm),
-                optax.adam(args.lr, eps=1e-5),
+                adam_with_param_counts(learning_rate=linear_schedule, eps=1e-5),
             )
-        train_state = TrainState.create(
+        train_state = tstate_class.create(
             apply_fn=network.apply,
             params=network_params,
             tx=tx,
@@ -100,7 +103,15 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
                 # SELECT ACTION
                 rng, _rng = jax.random.split(rng)
-                value, action, log_prob = agent.act(_rng, train_state.params, last_obs)
+                value, action, log_prob, activations = agent.act(_rng, train_state.params, last_obs)
+
+                if args.cont_backprop:
+                    rng, _rng = jax.random.split(rng)
+                    train_state = train_state.update_and_reinit(_rng,
+                                                                activations,
+                                                                replacement_rate=args.replacement_rate,
+                                                                decay_rate=args.decay_rate,
+                                                                maturity_threshold=args.maturity_threshold)
 
                 # STEP ENV
                 rng, _rng = jax.random.split(rng)
@@ -118,24 +129,29 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
             # CALCULATE ADVANTAGE
             train_state, env_state, last_obs, rng = runner_state
-            last_val_tuple, intermediates = network.apply(train_state.params, last_obs, capture_intermediates=True,
-                                        mutable=['intermediates'])
-            last_val = last_val_tuple[1]
+            _, last_val, _ = network.apply(train_state.params, last_obs)
 
             advantages, targets = agent.target(traj_batch, last_val)
 
             # UPDATE NETWORK
             def _update_epoch(update_state, unused):
-                def _update_minbatch(train_state, batch_info):
+                def _update_minbatch(runner_state, batch_info):
+                    train_state, rng = runner_state
                     traj_batch, advantages, targets = batch_info
 
                     grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
-                    total_loss, grads = grad_fn(
-                        train_state.params, traj_batch, advantages, targets, return_intermediates=True
+
+                    # TODO: return activations here.
+                    loss_info, grads = grad_fn(
+                        train_state.params, traj_batch, advantages, targets
                     )
+                    total_loss, losses_and_activations = loss_info
+
                     train_state = train_state.apply_gradients(grads=grads)
 
-                    return train_state, total_loss
+                    loss_info = (total_loss, losses_and_activations[:-1])
+
+                    return (train_state, rng), loss_info
 
                 train_state, traj_batch, advantages, targets, rng = update_state
                 rng, _rng = jax.random.split(rng)
@@ -159,8 +175,10 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
                     ),
                     shuffled_batch,
                 )
-                train_state, total_loss = jax.lax.scan(
-                    _update_minbatch, train_state, minibatches
+
+                rng, _rng = jax.random.split(rng)
+                (train_state, _), total_loss = jax.lax.scan(
+                    _update_minbatch, (train_state, _rng), minibatches
                 )
                 update_state = (train_state, traj_batch, advantages, targets, rng)
                 return update_state, total_loss
@@ -201,7 +219,7 @@ def make_train(rng: chex.PRNGKey, args: PolicyHyperparams):
 
 
 def run_train(passed_in_args: Union[dict, PolicyHyperparams] = None) -> Path:
-    jax.disable_jit(True)
+    # jax.disable_jit(True)
     ph = PolicyHyperparams()
     if isinstance(passed_in_args, PolicyHyperparams):
         args = passed_in_args

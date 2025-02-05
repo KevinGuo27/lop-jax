@@ -7,8 +7,8 @@ import jax.numpy as jnp
 class Actor(nn.Module):
     action_dim: int
     continuous: bool = False
-    activation: str = 'tanh'
-    hidden_size: int = 128
+    activation: str = 'relu'
+    h_dims: tuple = (256, 256)
 
     @nn.compact
     def __call__(self, x):
@@ -16,72 +16,104 @@ class Actor(nn.Module):
         if self.activation == 'tanh':
             activation = nn.tanh
 
-        actor_mean = nn.Dense(self.hidden_size, kernel_init=orthogonal(2), bias_init=constant(0.0))(
+
+        # TODO: lecun init?
+        out_1 = nn.Dense(self.h_dims[0], kernel_init=orthogonal(2), bias_init=constant(0.0),
+                         name='a_0')(
             x
         )
-        actor_mean = activation(actor_mean)
-        actor_mean = nn.Dense(
-            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(actor_mean)
+        out_1 = activation(out_1)
+        activations = {'a_0': None, 'a_1': out_1}
+
+        out_i = out_1
+
+        for i in range(1, len(self.h_dims)):
+            out_i = nn.Dense(self.h_dims[i], kernel_init=orthogonal(2), bias_init=constant(0.0),
+                             name=f'a_{i}')(
+                out_i
+            )
+            out_i = activation(out_i)
+            activations[f'a_{i + 1}'] = out_i
+
+        out_i_plus_1 = nn.Dense(
+            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0), name=f'a_{len(self.h_dims)}'
+        )(out_i)
 
         if self.continuous:
             actor_logtstd = self.param("log_std", nn.initializers.zeros, (self.action_dim,))
-            pi = distrax.MultivariateNormalDiag(actor_mean, jnp.exp(actor_logtstd))
+            activations['log_std'] = None
+            pi = distrax.MultivariateNormalDiag(out_i_plus_1, jnp.exp(actor_logtstd))
         else:
-            pi = distrax.Categorical(logits=actor_mean)
-        return pi
+            pi = distrax.Categorical(logits=out_i_plus_1)
+        return pi, activations
 
 
 class Critic(nn.Module):
-    hidden_size: int = 128
+    h_dims: tuple = (256, 256)
+    activation: str = 'relu'
 
     @nn.compact
     def __call__(self, x):
-        critic = nn.Dense(self.hidden_size, kernel_init=orthogonal(2), bias_init=constant(0.0))(
+        activation = nn.relu
+        if self.activation == 'tanh':
+            activation = nn.tanh
+
+        # TODO: lecun init?
+        out_1 = nn.Dense(self.h_dims[0], kernel_init=orthogonal(2), bias_init=constant(0.0),
+                         name='c_0')(
             x
         )
-        critic = nn.relu(critic)
-        critic = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
-            critic
+        out_1 = activation(out_1)
+        activations = {'c_0': None, 'c_1': out_1}
+
+        out_i = out_1
+
+        for i in range(1, len(self.h_dims)):
+            out_i = nn.Dense(self.h_dims[i], kernel_init=orthogonal(2), bias_init=constant(0.0),
+                             name=f'c_{i}')(
+                out_i
+            )
+            out_i = activation(out_i)
+            activations[f'c_{i + 1}'] = out_i
+
+        out_i_plus_1 = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0), name=f'c_{len(self.h_dims)}')(
+            out_i
         )
-        return critic
+        return out_i_plus_1, activations
 
 
-class SimpleNN(nn.Module):
-    hidden_size: int
-
-    @nn.compact
-    def __call__(self, x):
-        out = nn.Dense(self.hidden_size, kernel_init=orthogonal(2), bias_init=constant(0.0))(
-            x
-        )
-        out = nn.relu(out)
-        out = nn.Dense(
-            self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(out)
-        out = nn.relu(out)
-        out = nn.Dense(
-            self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(out)
-        return out
-
-
+# class SimpleNN(nn.Module):
+#     hidden_size: int
+#
+#     @nn.compact
+#     def __call__(self, x):
+#         out = nn.Dense(self.hidden_size, kernel_init=orthogonal(2), bias_init=constant(0.0))(
+#             x
+#         )
+#         out = nn.relu(out)
+#         out = nn.Dense(
+#             self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+#         )(out)
+#         out = nn.relu(out)
+#         out = nn.Dense(
+#             self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+#         )(out)
+#         return out
 
 
 class ActorCritic(nn.Module):
     action_dim: int
     is_continuous: bool = False
-    hidden_size: int = 128
+    h_dims: tuple = (256, 256)
 
     @nn.compact
     def __call__(self, x):
-        embedding = SimpleNN(hidden_size=self.hidden_size)(x)
 
-        actor = Actor(self.action_dim, continuous=self.is_continuous, hidden_size=self.hidden_size)
-        pi = actor(embedding)
+        actor = Actor(self.action_dim, continuous=self.is_continuous, h_dims=self.h_dims,
+                      name='actor')
+        pi, actor_activations = actor(x)
 
-        critic = Critic(hidden_size=self.hidden_size)
+        critic = Critic(h_dims=self.h_dims, name='critic')
+        v, critic_activations = critic(x)
 
-        v = critic(embedding)
-
-        return pi, jnp.squeeze(v, axis=-1)
+        return pi, jnp.squeeze(v, axis=-1), {'actor': actor_activations, 'critic': critic_activations}
