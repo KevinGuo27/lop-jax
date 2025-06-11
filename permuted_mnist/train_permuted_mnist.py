@@ -70,9 +70,8 @@ class DeepFFNN(nn.Module):
         return out, activations
 
 class EffectiveRankAgent:
-    def __init__(self, network: DeepFFNN, weight_decay: float = 0.0):
+    def __init__(self, network: DeepFFNN):
         self.network = network
-        self.weight_decay = weight_decay
         self.loss = jax.jit(self.loss)
         self.effective_rank_loss = jax.jit(self.effective_rank_loss)
     
@@ -80,10 +79,12 @@ class EffectiveRankAgent:
         output, features = self.network.apply(params, x)
         return output, features
     
-    def effective_rank(self, features):
-        s = jnp.linalg.svd(features, compute_uv=False)
-        norm_s = s / jnp.sum(jnp.abs(s))
-        entropy = -jnp.sum(jnp.where(norm_s > 0, norm_s * jnp.log(norm_s), 0.0))
+    def effective_rank(self, features, eps=1e-8):
+        sv = jnp.linalg.svdvals(features.T)
+        sv = jnp.abs(sv)  
+        total = jnp.maximum(sv.sum(), eps)
+        p = sv / total
+        entropy = -(p * jnp.log(p + eps)).sum()
         return jnp.exp(entropy)
     
     def effective_rank_loss(self, params, x):
@@ -95,9 +96,6 @@ class EffectiveRankAgent:
     def loss(self, params, x, y):
         output, features = self.network.apply(params, x)
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
-        # l2 regularization
-        if self.weight_decay > 0.0:
-            loss += self.weight_decay * l2_regularization(params, alpha=self.weight_decay)
         return loss
 
 def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
@@ -120,16 +118,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         )
         return args.lr * frac
     def train(lr, er_lr, rng):
-        if args.agent == 'er' or args.agent == 'l2_er':
-            agent = EffectiveRankAgent(network, weight_decay = args.weight_decay)
-        elif args.agent == 'bp':
-            # TODO: Implement BP-specific training logic here
-            pass
-        elif args.agent == 'l2':
-            # TODO: Implement L2-specific training logic here
-            pass
-        else:
-            NotImplementedError
+        agent = EffectiveRankAgent(network)
         
         # load data
         with open('data/mnist_', 'rb') as f:
@@ -139,20 +128,16 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         # init network
         network_params = network.init(rng, x_all[:1])
 
-        if args.optimizer == 'sgd':
-            optimizer = optax.sgd(learning_rate=lr)
-        else:
-            optimizer = adam_with_param_counts(learning_rate=lr, eps=1e-5)
         if args.no_anneal_lr:
-            tx = optax.chain(
-                # optax.clip_by_global_norm(args.max_grad_norm),
-                optimizer,
-            )
-        else:
-            tx = optax.chain(
-                # optax.clip_by_global_norm(args.max_grad_norm),
-                optimizer,
-            )
+            if args.optimizer == 'adam':
+                tx = optax.chain(
+                    optax.adamw(learning_rate=lr, weight_decay=args.weight_decay)
+                )
+            else:
+                tx = optax.chain(
+                    optax.add_decayed_weights(args.weight_decay),
+                    optax.sgd(learning_rate=lr)
+                )
         train_state = TrainState.create(
             apply_fn=network.apply,
             params=network_params,
@@ -161,26 +146,28 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         assert (examples_per_task // args.mini_batch_size) % args.er_batch == 0, "ER batch size must divide examples per task"
         def update_task(runner_state, task):
             def update_erbatch(runner_state, batch_idx):
-                def update_accuracy(runner_state, _):
+                def update_accuracy(runner_state, mini_batch_idx):
                     x, y, train_state, rng = runner_state
-                    loss = agent.loss(train_state.params, x, y)
+                    minibatch_x = jax.lax.dynamic_slice_in_dim(x, mini_batch_idx, args.mini_batch_size, axis=0)
+                    minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
+                    loss = agent.loss(train_state.params, minibatch_x, minibatch_y)
 
-                    logits, _ = agent.predict(train_state.params, x)
+                    logits, _ = agent.predict(train_state.params, minibatch_x)
                     pred_labels = jnp.argmax(logits, axis=-1)
-                    accuracy = jnp.mean(pred_labels == y)
+                    accuracy = jnp.mean(pred_labels == minibatch_y)
 
-                    grads = jax.grad(agent.loss)(train_state.params, x, y)
+                    grads = jax.grad(agent.loss)(train_state.params, minibatch_x, minibatch_y)
                     train_state = train_state.apply_gradients(grads=grads)
                     return (x, y, train_state, rng), (loss, accuracy)
                         
                 x, y, train_state, rng = runner_state
-                batch_x = jax.lax.dynamic_slice_in_dim(x, batch_idx, args.mini_batch_size, axis=0)
-                batch_y = jax.lax.dynamic_slice_in_dim(y, batch_idx, args.mini_batch_size, axis=0)
+                batch_x = jax.lax.dynamic_slice_in_dim(x, batch_idx, args.mini_batch_size * args.er_batch, axis=0)
+                batch_y = jax.lax.dynamic_slice_in_dim(y, batch_idx, args.mini_batch_size * args.er_batch, axis=0)
                 accuracy_runner_state = (batch_x, batch_y, train_state, rng)
-                accuracy_runner_state, (loss, accuracy) = jax.lax.scan(update_accuracy, accuracy_runner_state, None, args.er_batch)
+                accuracy_runner_state, (loss, accuracy) = jax.lax.scan(update_accuracy, accuracy_runner_state, jnp.arange(0, args.er_batch * args.mini_batch_size, args.mini_batch_size), args.er_batch)
                 train_state = accuracy_runner_state[2]
-                runner_state = (x, y, train_state, rng)
-                return runner_state, (loss, accuracy)
+                # runner_state = (x, y, train_state, rng)
+                # return runner_state, (loss, accuracy)
 
                 def update_erank(runner_state, _):
                     x, train_state, rng = runner_state
@@ -190,12 +177,12 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     return (x, train_state, rng), er_loss
 
                 if args.agent in ['er', 'l2_er']:
-                    er_runner_state = (x, train_state, rng)
+                    er_runner_state = (batch_x, train_state, rng)
                     er_runner_state, er_loss = jax.lax.scan(update_erank, er_runner_state, None, args.er_step)
                     train_state = er_runner_state[1]
                 
-                erbatch_runner_state = (x, y, train_state, rng)
-                return erbatch_runner_state, info
+                runner_state = (x, y, train_state, rng)
+                return runner_state, (loss, accuracy)
 
 
             x_all, y_all, train_state, rng = runner_state
