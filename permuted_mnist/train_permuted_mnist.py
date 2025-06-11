@@ -16,6 +16,7 @@ import orbax.checkpoint
 from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.hessian_computation import get_hvp_fn
 from utils.lanczos import lanczos_alg
+from utils.density import eigv_to_density
 
 # Mapping of activation names to functions
 ACTIVATIONS = {
@@ -254,7 +255,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 )
                 eig_vals, all_weights = jax.tree.map(lambda x: x.reshape(-1), lanczos_vecs)
                 density, grids = eigv_to_density(eig_vals, all_weights, grid_len=10000)
-
+                
+                # Plot the Hessian spectrum
                 plt.figure(figsize=(5,3))
                 plt.semilogy(grids, density)
                 plt.title(f"Hessian spectrum after task {task}")
