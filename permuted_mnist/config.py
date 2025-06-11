@@ -38,6 +38,7 @@ class PermutedMnistHyperparams(Hyperparams):
     eval_size: int = 2000
     record_hessian: bool = False
     record_relu: bool = False
+    compute_hessian: bool = False
 
     def process_args(self) -> None:
         self.lr = jnp.array(self.lr)

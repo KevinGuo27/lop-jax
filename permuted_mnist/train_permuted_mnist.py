@@ -14,6 +14,8 @@ from flax.training import orbax_utils
 from utils.file_system import get_results_path, numpyify
 import orbax.checkpoint
 from utils.optimizer import l2_regularization, adam_with_param_counts
+from utils.hessian_computation import get_hvp_fn
+from utils.lanczos import lanczos_alg
 
 # Mapping of activation names to functions
 ACTIVATIONS = {
@@ -238,6 +240,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             eff_rank_list.append(res_info['effective_rank'])
             approx_rank_list.append(res_info['approx_rank'])
             dead_neurons_list.append(res_info['dead_neurons'])
+
+            if args.compute_hessian:
+                # TODO: Compute the Hessian
         
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)
