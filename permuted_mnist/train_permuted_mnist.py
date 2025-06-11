@@ -244,7 +244,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
 
             if args.compute_hessian:
                 # TODO: Compute the Hessian
-                x_hessian, y_hessian = x[:args.eval_size], y[:args.eval_size]
+                x_hessian, y_hessian = x_all[:args.eval_size], y_all[:args.eval_size]
                 hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, x_hessian)
                 hvp_cl = lambda v: hvp_fn(train_state.params, v) / x_hessian.shape[0]
                 tridiag, lanczos_vecs = lanczos_alg(
@@ -261,7 +261,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 plt.title(f"Hessian spectrum after task {task}")
                 plt.xlabel("Eigen-value")
                 plt.ylabel("Density")
-                fname = os.path.join(results_path, f"hessian_task_{task}.png")
+                fname = os.path.join("hessian", f"hessian_task_{task}.png")
                 plt.savefig(fname) 
                 plt.close()
         

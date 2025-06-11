@@ -17,9 +17,9 @@
 
 from jax import jacfwd
 from jax import jacrev
-from jax.api import grad
-from jax.api import jit
-from jax.api import jvp
+from jax import grad
+from jax import jit
+from jax import jvp
 from jax.flatten_util import ravel_pytree
 import jax.numpy as np
 import jax.tree_util as tu
