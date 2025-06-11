@@ -243,6 +243,25 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
 
             if args.compute_hessian:
                 # TODO: Compute the Hessian
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, x_all)
+                hvp = hvp_fn(train_state.params, x_all)
+                hessian_matrix = jax.jacobian(hvp_fn)(train_state.params, x_all)
+                tridiag, lanczos_vecs = lanczos_alg(
+                    lambda v: hvp_fn(train_state.params, v),
+                    num_params,
+                    order=100,  # Adjust order as needed
+                    rng_key=rng
+                )
+                eig_vals, all_weights = jax.tree.map(lambda x: x.reshape(-1), lanczos_vecs)
+                density, grids = eigv_to_density(eig_vals, all_weights, grid_len=10000)
+
+                plt.figure(figsize=(5,3))
+                plt.semilogy(grids, density)
+                plt.title(f"Hessian spectrum after task {task}")
+                plt.xlabel("Eigen-value")
+                plt.ylabel("Density")
+                fname = os.path.join(results_path, f"hessian_task_{task}.png")
+                plt.savefig(fname); plt.close()
         
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)
