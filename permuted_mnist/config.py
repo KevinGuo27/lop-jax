@@ -6,7 +6,7 @@ from tap import Tap
 class Hyperparams(Tap):
     study_name: str = 'test'
     seed: int = 2024
-    debug: bool = False
+    debug: bool = True
     platform: Literal['cpu', 'gpu'] = 'gpu'
     n_seeds: int = 1
 
@@ -38,7 +38,9 @@ class PermutedMnistHyperparams(Hyperparams):
     eval_size: int = 2000
     record_hessian: bool = False
     record_relu: bool = False
-    compute_hessian: bool = False
+    compute_hessian: bool = True
+
+    output_dir: str = 'output'
 
     def process_args(self) -> None:
         self.lr = jnp.array(self.lr)

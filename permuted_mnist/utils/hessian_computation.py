@@ -21,8 +21,8 @@ from jax import grad
 from jax import jit
 from jax import jvp
 from jax.flatten_util import ravel_pytree
-import jax.numpy as np
-import jax.tree_util as tu
+import jax.numpy as jnp
+import jax
 
 
 # TODO(gilmer): Should be possible to avoid backpropping through the
@@ -84,13 +84,13 @@ def _tree_sum(tree_left, tree_right):
   """Computes tree_left + tree_right."""
   def f(x, y):
     return x + y
-  return tu.tree_multimap(f, tree_left, tree_right)
+  return jax.tree_map(f, tree_left, tree_right)
 
 
 def _tree_zeros_like(tree):
   def f(x):
-    return np.zeros_like(x)
-  return tu.tree_map(f, tree)
+    return jnp.zeros_like(x)
+  return jax.tree_map(f, tree)
 
 
 def get_hvp_fn(loss, params, batches):

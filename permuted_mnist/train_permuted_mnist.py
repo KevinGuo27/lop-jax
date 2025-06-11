@@ -16,7 +16,10 @@ import orbax.checkpoint
 from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.hessian_computation import get_hvp_fn
 from utils.lanczos import lanczos_alg
-from utils.density import eigv_to_density
+import utils.density as density_lib
+import matplotlib.pyplot as plt
+import os
+import time
 
 # Mapping of activation names to functions
 ACTIVATIONS = {
@@ -96,7 +99,8 @@ class EffectiveRankAgent:
         loss_erank = - jnp.stack(erank_losses).mean()
         return loss_erank
 
-    def loss(self, params, x, y):
+    def loss(self, params, batch):
+        x, y = batch
         output, features = self.network.apply(params, x)
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
         return loss
@@ -113,13 +117,13 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
     classes_per_task = 10
     input_size = 784
     examples_per_task = images_per_class * classes_per_task
-    def linear_schedule(count):
-        frac = (
-            1.0
-            - (count // (args.num_minibatches * args.update_epochs))
-            / num_updates
-        )
-        return args.lr * frac
+    # def linear_schedule(count):
+    #     frac = (
+    #         1.0
+    #         - (count // (args.num_minibatches * args.update_epochs))
+    #         / num_updates
+    #     )
+    #     return args.lr * frac
     def train(lr, er_lr, rng):
         agent = EffectiveRankAgent(network)
         
@@ -153,13 +157,13 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     x, y, train_state, rng = runner_state
                     minibatch_x = jax.lax.dynamic_slice_in_dim(x, mini_batch_idx, args.mini_batch_size, axis=0)
                     minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
-                    loss = agent.loss(train_state.params, minibatch_x, minibatch_y)
+                    loss = agent.loss(train_state.params, (minibatch_x, minibatch_y))
 
                     logits, _ = agent.predict(train_state.params, minibatch_x)
                     pred_labels = jnp.argmax(logits, axis=-1)
                     accuracy = jnp.mean(pred_labels == minibatch_y)
 
-                    grads = jax.grad(agent.loss)(train_state.params, minibatch_x, minibatch_y)
+                    grads = jax.grad(agent.loss)(train_state.params, (minibatch_x, minibatch_y))
                     train_state = train_state.apply_gradients(grads=grads)
                     return (x, y, train_state, rng), (loss, accuracy)
                         
@@ -244,26 +248,57 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
 
             if args.compute_hessian:
                 # TODO: Compute the Hessian
-                x_hessian, y_hessian = x_all[:args.eval_size], y_all[:args.eval_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, x_hessian)
-                hvp_cl = lambda v: hvp_fn(train_state.params, v) / x_hessian.shape[0]
+                eval_batch = (x_all[:args.eval_size], y_all[:args.eval_size])
+                
+                # Create a generator function that yields the evaluation batch
+                def batch_generator():
+                    yield eval_batch
+                
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, batch_generator)
+                hvp_cl = lambda v: hvp_fn(train_state.params, v)
+                print("num_params: {}".format(num_params))
+                start = time.perf_counter()
+                hvp_cl(np.ones(num_params)) # first call of a jitted function compiles it
+                end = time.perf_counter()
+                print("hvp compile time: {}".format(end-start))
+                start = time.perf_counter()
+                hvp_cl(2*np.ones(num_params)) # second+ call will be much faster
+                end = time.perf_counter()
+                print("hvp compute time: {}".format(end-start))
+                rng, _rng = jax.random.split(rng)
+                start = time.perf_counter()
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
                     order=100,
-                    rng_key=rng
+                    rng_key=_rng,
                 )
                 density, grids = density_lib.tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 
-                # Plot the Hessian spectrum
-                plt.figure(figsize=(5,3))
-                plt.semilogy(grids, density)
-                plt.title(f"Hessian spectrum after task {task}")
-                plt.xlabel("Eigen-value")
-                plt.ylabel("Density")
-                fname = os.path.join("hessian", f"hessian_task_{task}.png")
-                plt.savefig(fname) 
-                plt.close()
+                # Use JAX debug callback to plot from within JIT
+                def plot_hessian_callback(grids, density, task_num):
+                    # Convert JAX arrays to NumPy for matplotlib
+                    grids_np = np.array(grids)
+                    density_np = np.array(density)
+                    
+                    plt.figure(figsize=(8, 6))
+                    plt.semilogy(grids_np, density_np, label=f'Task {task_num}')
+                    plt.ylim(1e-10, 1e2)
+                    plt.ylabel("Density")
+                    plt.xlabel("Eigenvalue")
+                    plt.title(f"Hessian Spectrum - Task {task_num}")
+                    plt.legend()
+                    plt.grid(True, alpha=0.3)
+
+                    # Ensure output directory exists and save the figure
+                    os.makedirs(args.output_dir, exist_ok=True)
+                    plt.savefig(os.path.join(args.output_dir, f"hessian_task_{task_num}.png"), dpi=150, bbox_inches='tight')
+                    plt.close()
+                    
+                    if args.debug:
+                        print("Saved Hessian spectrum to {}".format(os.path.join(args.output_dir, f"hessian_task_{task}.png")))
+                        # Call the plotting function via JAX debug callback
+                jax.debug.callback(plot_hessian_callback, grids, density, task)
         
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)
@@ -272,7 +307,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         dead_neurons      = jnp.stack(dead_neurons_list)
 
         res_info = {
-            'rank':            ranks,
+            'rank':           ranks,
             'effective_rank':  eff_ranks,
             'approx_rank':     approx_ranks,
             'dead_neurons':    dead_neurons,
@@ -307,10 +342,10 @@ if __name__ == "__main__":
             swept_args.appendleft(getattr(args, arg))
 
     train_jit = vmaps_train
-    t = time()
+    t = time.perf_counter()
     print(*swept_args)
     out = train_jit(*swept_args)
-    new_t = time()
+    new_t = time.perf_counter()
     total_runtime = new_t - t
     print('Total runtime:', total_runtime)
 
