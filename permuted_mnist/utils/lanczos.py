@@ -18,8 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import jax.numpy as np
-import jax.ops as ops
+import jax.numpy as jnp
 import jax.random as random
 
 
@@ -46,12 +45,12 @@ def lanczos_alg(matrix_vector_product, dim, order, rng_key):
       vectors.
   """
 
-  tridiag = np.zeros((order, order))
-  vecs = np.zeros((order, dim))
+  tridiag = jnp.zeros((order, order))
+  vecs = jnp.zeros((order, dim))
 
   init_vec = random.normal(rng_key, shape=(dim,))
-  init_vec = init_vec / np.linalg.norm(init_vec)
-  vecs = ops.index_update(vecs, 0, init_vec)
+  init_vec = init_vec / jnp.linalg.norm(init_vec)
+  vecs = vecs.at[0].set(init_vec)
 
   beta = 0
   # TODO(gilmer): Better to use lax.fori loop for faster compile?
@@ -67,17 +66,17 @@ def lanczos_alg(matrix_vector_product, dim, order, rng_key):
         'Output of matrix_vector_product(v) must be of shape [dim].')
     w = w - beta * v_old
 
-    alpha = np.dot(w, v)
-    tridiag = ops.index_update(tridiag, (i, i), alpha)
+    alpha = jnp.dot(w, v)
+    tridiag = tridiag.at[i, i].set(alpha)
     w = w - alpha * v
 
     # Full Reorthogonalization
     for j in range(i):
       tau = vecs[j, :].reshape((dim))
-      coeff = np.dot(w, tau)
+      coeff = jnp.dot(w, tau)
       w += -coeff * tau
 
-    beta = np.linalg.norm(w)
+    beta = jnp.linalg.norm(w)
 
     # TODO(gilmer): The tf implementation raises an exception if beta < 1e-6
     # here. However JAX cannot compile a function that has an if statement
@@ -86,7 +85,7 @@ def lanczos_alg(matrix_vector_product, dim, order, rng_key):
     # dependent.
 
     if i + 1 < order:
-      tridiag = ops.index_update(tridiag, (i, i+1), beta)
-      tridiag = ops.index_update(tridiag, (i+1, i), beta)
-      vecs = ops.index_update(vecs, i+1, w/beta)
+      tridiag = tridiag.at[i,   i+1].set(beta)
+      tridiag = tridiag.at[i+1, i  ].set(beta)
+      vecs = vecs.at[i+1].set(w / beta)
   return (tridiag, vecs)

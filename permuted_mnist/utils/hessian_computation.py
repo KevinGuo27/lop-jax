@@ -151,7 +151,8 @@ def get_hvp_fn(loss, params, batches):
     hessian_vp = _tree_zeros_like(params)
     # TODO(gilmer): Get rid of this for loop by using either vmap or lax.fori.
     count = 0
-    for batch in batches():
+    for batch_idx in range(batches.shape[0]):
+      batch = batches[batch_idx]
       partial_vp = jitted_hvp(params, batch, v)
       hessian_vp = _tree_sum(hessian_vp, partial_vp)
       count += 1
