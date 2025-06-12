@@ -172,8 +172,8 @@ def plot_hessian_spectrum(grids, density, task_num, agent_name):
     density_np = np.array(density)
 
     out_dir = Path("hessian", agent_name)
-    out_dir.mkdir(exist_ok=True)
-    fname   = out_dir / f"hessian_task_{task_num}.png"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fname = out_dir / f"hessian_task_{task_num}.png"
                     
     plt.figure(figsize=(8, 6))
     plt.semilogy(grids_np, density_np, label=f'Task {task_num}')
