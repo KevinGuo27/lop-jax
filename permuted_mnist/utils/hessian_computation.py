@@ -14,15 +14,14 @@
 
 """Code to perform Hessian vector products on neural networks.
 """
-
+import jax
 from jax import jacfwd
 from jax import jacrev
 from jax import grad
 from jax import jit
 from jax import jvp
 from jax.flatten_util import ravel_pytree
-import jax.numpy as np
-import jax.tree_util as tu
+import jax.numpy as jnp
 
 
 # TODO(gilmer): Should be possible to avoid backpropping through the
@@ -75,8 +74,8 @@ def hvp(loss, params, batch, v):
   Returns:
     hvp: array of shape [num_params] equal to Hv where H is the hessian.
   """
-
-  loss_fn = lambda x: loss(x, batch)
+  x_in, y_in = batch
+  loss_fn = lambda x: loss(x, x_in, y_in)
   return jvp(grad(loss_fn), [params], [v])[1]
 
 
@@ -84,16 +83,16 @@ def _tree_sum(tree_left, tree_right):
   """Computes tree_left + tree_right."""
   def f(x, y):
     return x + y
-  return tu.tree_multimap(f, tree_left, tree_right)
+  return jax.tree_map(f, tree_left, tree_right)
 
 
 def _tree_zeros_like(tree):
   def f(x):
-    return np.zeros_like(x)
-  return tu.tree_map(f, tree)
+    return jnp.zeros_like(x)
+  return jax.tree_map(f, tree)
 
 
-def get_hvp_fn(loss, params, batches):
+def get_hvp_fn(loss, params, batches, batch_size=100):
   """Generates a function mapping (params, v) -> Hv where H is the hessian.
 
   This function will batch the inputs and targets to be fed into loss. The
@@ -127,7 +126,7 @@ def get_hvp_fn(loss, params, batches):
     unravel: Maps v back to the form reprented as params.
     num_params: Total number of parameters in params (int).
   """
-
+  x_all, y_all = batches
   flat_params, unravel = ravel_pytree(params)
 
   @jit
@@ -151,8 +150,8 @@ def get_hvp_fn(loss, params, batches):
     hessian_vp = _tree_zeros_like(params)
     # TODO(gilmer): Get rid of this for loop by using either vmap or lax.fori.
     count = 0
-    for batch_idx in range(batches.shape[0]):
-      batch = batches[batch_idx]
+    for batch_idx in range(0, x_all.shape[0], batch_size):
+      batch = (x_all[batch_idx:batch_idx + batch_size], y_all[batch_idx:batch_idx + batch_size])
       partial_vp = jitted_hvp(params, batch, v)
       hessian_vp = _tree_sum(hessian_vp, partial_vp)
       count += 1

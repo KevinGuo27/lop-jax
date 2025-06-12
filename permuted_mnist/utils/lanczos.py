@@ -77,7 +77,6 @@ def lanczos_alg(matrix_vector_product, dim, order, rng_key):
       w += -coeff * tau
 
     beta = jnp.linalg.norm(w)
-
     # TODO(gilmer): The tf implementation raises an exception if beta < 1e-6
     # here. However JAX cannot compile a function that has an if statement
     # that depends on a dynamic variable. Should we still handle this base?

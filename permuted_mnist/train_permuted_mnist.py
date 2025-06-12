@@ -11,12 +11,12 @@ from utils.evaluation import summarize_all_layers
 import optax
 from flax.training.train_state import TrainState
 from flax.training import orbax_utils
-from utils.file_system import get_results_path, numpyify
+from utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
 import orbax.checkpoint
 from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.hessian_computation import get_hvp_fn
 from utils.lanczos import lanczos_alg
-from utils.density import eigv_to_density
+from utils.density import tridiag_to_density
 
 # Mapping of activation names to functions
 ACTIVATIONS = {
@@ -187,16 +187,16 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 runner_state = (x, y, train_state, rng)
                 return runner_state, (loss, accuracy)
 
-
-            x_all, y_all, train_state, rng = runner_state
-            rng, _rng = jax.random.split(rng)
-            pixel_permutation = jax.random.permutation(rng, input_size)
-            x_all = x_all[:, pixel_permutation]
-            # Shuffle the data for the current task
-            rng, _rng = jax.random.split(rng)
-            data_permutation = jax.random.permutation(rng, examples_per_task)
-            x, y = x_all[data_permutation], y_all[data_permutation]
-            update_erbatch_runner_state = (x, y, train_state, _rng)
+            x, y, train_state, rng = runner_state
+            # x_all, y_all, train_state, rng = runner_state
+            # rng, _rng = jax.random.split(rng)
+            # pixel_permutation = jax.random.permutation(rng, input_size)
+            # x_all = x_all[:, pixel_permutation]
+            # # Shuffle the data for the current task
+            # rng, _rng = jax.random.split(rng)
+            # data_permutation = jax.random.permutation(rng, examples_per_task)
+            # x, y = x_all[data_permutation], y_all[data_permutation]
+            update_erbatch_runner_state = (x, y, train_state, rng)
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(update_erbatch, update_erbatch_runner_state, 
                                         jnp.arange(0, examples_per_task, args.mini_batch_size * args.er_batch), 
                                         examples_per_task // (args.mini_batch_size * args.er_batch))
@@ -228,43 +228,45 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 
             return runner_state, res_info
 
-        runner_state = (
-            x_all,
-            y_all,
-            train_state, 
-            rng)
         loss_list, acc_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], []
         update_task = jax.jit(update_task)
         for task in range(num_tasks):
+            # permuted dataset
+            rng, _rng = jax.random.split(rng)
+            pixel_permutation = jax.random.permutation(rng, input_size)
+            x_all = x_all[:, pixel_permutation]
+            # Shuffle the data for the current task
+            rng, _rng = jax.random.split(rng)
+            data_permutation = jax.random.permutation(rng, examples_per_task)
+            x, y = x_all[data_permutation], y_all[data_permutation]
+
+            runner_state = (
+                x,
+                y,
+                train_state, 
+                rng)
             runner_state, res_info = update_task(runner_state, task)
+            x, y, train_state, rng = runner_state
             rank_list.append(res_info['rank'])
             eff_rank_list.append(res_info['effective_rank'])
             approx_rank_list.append(res_info['approx_rank'])
             dead_neurons_list.append(res_info['dead_neurons'])
 
-            if args.compute_hessian:
+            if args.compute_hessian and task % args.compute_hessian_interval == 0:
                 # TODO: Compute the Hessian
-                x_hessian, y_hessian = x_all[:args.eval_size], y_all[:args.eval_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, x_hessian)
-                hvp_cl = lambda v: hvp_fn(train_state.params, v) / x_hessian.shape[0]
+                x_hessian, y_hessian = x[:args.compute_hessian_size], y[:args.compute_hessian_size]
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_cl = lambda v: hvp_fn(train_state.params, v)
+                rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
                     order=100,
                     rng_key=rng
                 )
-                density, grids = density_lib.tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-                
-                # Plot the Hessian spectrum
-                plt.figure(figsize=(5,3))
-                plt.semilogy(grids, density)
-                plt.title(f"Hessian spectrum after task {task}")
-                plt.xlabel("Eigen-value")
-                plt.ylabel("Density")
-                fname = os.path.join("hessian", f"hessian_task_{task}.png")
-                plt.savefig(fname) 
-                plt.close()
-        
+                density, grids = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                jax.debug.callback(plot_hessian_spectrum, grids, density, task, args.agent)
+
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)
         eff_ranks         = jnp.stack(eff_rank_list)

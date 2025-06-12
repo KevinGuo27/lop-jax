@@ -14,10 +14,11 @@ import numpy as np
 from flax.training.train_state import TrainState
 import optax
 import orbax.checkpoint
-
+import os
 from pobax.envs import get_env
 from pobax.models import get_gymnax_network_fn
 from pobax.config import Hyperparams
+import matplotlib.pyplot as plt
 
 from definitions import ROOT_DIR
 
@@ -165,3 +166,23 @@ def numpyify(leaf):
     if isinstance(leaf, jnp.ndarray):
         return np.array(leaf)
     return leaf
+
+def plot_hessian_spectrum(grids, density, task_num, agent_name):
+    grids_np = np.array(grids)
+    density_np = np.array(density)
+
+    out_dir = Path("hessian", agent_name)
+    out_dir.mkdir(exist_ok=True)
+    fname   = out_dir / f"hessian_task_{task_num}.png"
+                    
+    plt.figure(figsize=(8, 6))
+    plt.semilogy(grids_np, density_np, label=f'Task {task_num}')
+    plt.ylim(1e-10, 1e2)
+    plt.ylabel("Density")
+    plt.xlabel("Eigenvalue")
+    plt.title(f"Hessian Spectrum {agent_name} - Task {task_num}")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(fname)
+    print(f"Saved Hessian spectrum to {fname}")
+    plt.close()

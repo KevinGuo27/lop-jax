@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import math
-import numpy as np
+import jax.numpy as jnp
 
 
 def eigv_to_density(eig_vals, all_weights=None, grids=None,
@@ -54,34 +54,30 @@ def eigv_to_density(eig_vals, all_weights=None, grids=None,
     grids: Array of shape [grid_len]. The values the density is estimated on.
   """
   if all_weights is None:
-    all_weights = np.ones(eig_vals.shape) * 1.0 / float(eig_vals.shape[1])
+    all_weights = jnp.ones(eig_vals.shape) * 1.0 / float(eig_vals.shape[1])
   num_draws = eig_vals.shape[0]
 
-  lambda_max = np.nanmean(np.max(eig_vals, axis=1), axis=0) + grid_expand
-  lambda_min = np.nanmean(np.min(eig_vals, axis=1), axis=0) - grid_expand
+  lambda_max = jnp.nanmean(jnp.max(eig_vals, axis=1), axis=0) + grid_expand
+  lambda_min = jnp.nanmean(jnp.min(eig_vals, axis=1), axis=0) - grid_expand
 
   if grids is None:
     assert grid_len is not None, 'grid_len is required if grids is None.'
-    grids = np.linspace(lambda_min, lambda_max, num=grid_len)
+    grids = jnp.linspace(lambda_min, lambda_max, num=grid_len)
 
   grid_len = grids.shape[0]
   if sigma_squared is None:
-    sigma = 10 ** -5 * max(1, (lambda_max - lambda_min))
+    sigma = 10 ** -5 * jnp.maximum(1, (lambda_max - lambda_min))
   else:
-    sigma = sigma_squared * max(1, (lambda_max - lambda_min))
+    sigma = sigma_squared * jnp.maximum(1, (lambda_max - lambda_min))
 
-  density_each_draw = np.zeros((num_draws, grid_len))
+  density_each_draw = jnp.zeros((num_draws, grid_len))
   for i in range(num_draws):
-
-    if np.isnan(eig_vals[i, 0]):
-      raise ValueError('tridaig has nan values.')
-    else:
-      for j in range(grid_len):
-        x = grids[j]
-        vals = _kernel(eig_vals[i, :], x, sigma)
-        density_each_draw[i, j] = np.sum(vals * all_weights[i, :])
-  density = np.nanmean(density_each_draw, axis=0)
-  norm_fact = np.sum(density) * (grids[1] - grids[0])
+    for j in range(grid_len):
+      x = grids[j]
+      vals = _kernel(eig_vals[i, :], x, sigma)
+      density_each_draw = density_each_draw.at[i, j].set(jnp.sum(vals * all_weights[i, :]))
+  density = jnp.nanmean(density_each_draw, axis=0)
+  norm_fact = jnp.sum(density) * (grids[1] - grids[0])
   density = density / norm_fact
   return density, grids
 
@@ -105,15 +101,15 @@ def tridiag_to_eigv(tridiag_list):
   # Calculating the node / weights from Jacobi matrices.
   num_draws = len(tridiag_list)
   num_lanczos = tridiag_list[0].shape[0]
-  eig_vals = np.zeros((num_draws, num_lanczos))
-  all_weights = np.zeros((num_draws, num_lanczos))
+  eig_vals = jnp.zeros((num_draws, num_lanczos))
+  all_weights = jnp.zeros((num_draws, num_lanczos))
   for i in range(num_draws):
-    nodes, evecs = np.linalg.eigh(tridiag_list[i])
-    index = np.argsort(nodes)
+    nodes, evecs = jnp.linalg.eigh(tridiag_list[i])
+    index = jnp.argsort(nodes)
     nodes = nodes[index]
     evecs = evecs[:, index]
-    eig_vals[i, :] = nodes
-    all_weights[i, :] = evecs[0] ** 2
+    eig_vals = eig_vals.at[i, :].set(nodes)
+    all_weights = all_weights.at[i, :].set(evecs[0] ** 2)
   return eig_vals, all_weights
 
 
@@ -157,9 +153,9 @@ def _kernel(x, x0, variance):
     point_estimate: A scalar corresponding to
       C exp(-(x - x0) ^2 /(2 * variance)).
   """
-  coeff = 1.0 / np.sqrt(2 * math.pi * variance)
+  coeff = 1.0 / jnp.sqrt(2 * math.pi * variance)
   val = -(x0 - x) ** 2
   val = val / (2.0 * variance)
-  val = np.exp(val)
+  val = jnp.exp(val)
   point_estimate = coeff * val
   return point_estimate

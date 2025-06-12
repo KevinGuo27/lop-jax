@@ -36,9 +36,9 @@ class PermutedMnistHyperparams(Hyperparams):
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?
     eval_size: int = 2000
-    record_hessian: bool = False
-    record_relu: bool = False
     compute_hessian: bool = False
+    compute_hessian_size: int = 100  # Number of samples to use for computing the hessian
+    compute_hessian_interval: int = 1
 
     def process_args(self) -> None:
         self.lr = jnp.array(self.lr)
