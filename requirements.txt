@@ -1,4 +1,11 @@
-jax
+jax[cuda12]
 distrax
 gymnax
 typed-argument-parser
+torch
+torchvision
+tqdm
+optax
+numpy==1.26.4
+matplotlib
+-e .
