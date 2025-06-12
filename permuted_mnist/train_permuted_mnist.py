@@ -256,23 +256,29 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 
                 hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, batch_generator)
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
+                #print the param norm:
+                param_norm = jnp.sqrt(sum(jnp.sum(jnp.square(p)) for p in jax.tree.leaves(train_state.params)))
+                jax.debug.print("Parameter norm: {:.6f}", param_norm)
                 print("num_params: {}".format(num_params))
-                start = time.perf_counter()
-                hvp_cl(np.ones(num_params)) # first call of a jitted function compiles it
-                end = time.perf_counter()
-                print("hvp compile time: {}".format(end-start))
-                start = time.perf_counter()
-                hvp_cl(2*np.ones(num_params)) # second+ call will be much faster
-                end = time.perf_counter()
-                print("hvp compute time: {}".format(end-start))
+                # start = time.perf_counter()
+                # hvp_cl(np.ones(num_params)) # first call of a jitted function compiles it
+                # end = time.perf_counter()
+                # print("hvp compile time: {}".format(end-start))
+                # start = time.perf_counter()
+                # hvp_cl(2*np.ones(num_params)) # second+ call will be much faster
+                # end = time.perf_counter()
+                # print("hvp compute time: {}".format(end-start))
                 rng, _rng = jax.random.split(rng)
-                start = time.perf_counter()
+                # start = time.perf_counter()
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
                     order=100,
                     rng_key=_rng,
                 )
+                # print the tridiag norm:
+                tridiag_norm = jnp.linalg.norm(tridiag)
+                jax.debug.print("Tridiag norm: {:.6f}", tridiag_norm)
                 density, grids = density_lib.tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 
                 # Use JAX debug callback to plot from within JIT

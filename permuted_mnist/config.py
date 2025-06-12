@@ -12,12 +12,12 @@ class Hyperparams(Tap):
 
 class PermutedMnistHyperparams(Hyperparams):
     env: str = 'permuted_mnist'
-    agent: Literal['er', 'bp', 'l2', 'cbp', 'l2_er'] = 'l2_er'
+    agent: Literal['er', 'bp', 'l2', 'cbp', 'l2_er'] = 'bp'
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
     lr: list[float] = [0.01]
     optimizer: Literal['adam', 'sgd'] = 'sgd'
-    weight_decay: float = 0.001 # Do we use L2 regularization?
+    weight_decay: float = 0.000 # Do we use L2 regularization?
     num_features: int = 100  # Number of input features
     change_after: int = 10 * 6000  # Number of steps after which the task changes
     to_perturb: bool = False  # Whether to perturb the input data
@@ -40,7 +40,7 @@ class PermutedMnistHyperparams(Hyperparams):
     record_relu: bool = False
     compute_hessian: bool = True
 
-    output_dir: str = 'output'
+    output_dir: str = f'output_{agent}'
 
     def process_args(self) -> None:
         self.lr = jnp.array(self.lr)
