@@ -15,16 +15,10 @@ from flax.training.train_state import TrainState
 import optax
 import orbax.checkpoint
 import os
-# from pobax.envs import get_env
-# from pobax.models import get_gymnax_network_fn
-# from pobax.config import Hyperparams
 import matplotlib.pyplot as plt
 
 #from definitions import ROOT_DIR
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-
 
 def get_results_path(args, return_npy: bool = True):
     results_dir = Path(ROOT_DIR, 'results')
@@ -77,32 +71,6 @@ def import_module_to_var(fpath: Path, var_name: str) -> Union[dict, list]:
 
 def load_info(results_path: Path) -> dict:
     return np.load(results_path, allow_pickle=True).item()
-
-
-def load_train_state(key: jax.random.PRNGKey, fpath: Path):
-    # load our params
-    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-    restored = orbax_checkpointer.restore(fpath)
-    args = restored['args']
-    unpacked_ts = restored['out']['runner_state'][0]
-
-
-    env, env_params = get_env(args['env'], key,
-                              args['gamma'],
-                              action_concat=args['action_concat'])
-
-    network_fn, action_size = get_gymnax_network_fn(env, env_params, memoryless=args['memoryless'])
-
-    network = network_fn(action_size,
-                         double_critic=args['double_critic'],
-                         hidden_size=args['hidden_size'])
-    tx = optax.adam(args['lr'][0])
-    ts = TrainState.create(apply_fn=network.apply,
-                           params=jax.tree_map(lambda x: x[0, 0, 0, 0, 0, 0], unpacked_ts['params']),
-                           tx=tx)
-
-    return env, env_params, args, network, ts
-
 
 def get_fn_from_module(entry: str, fn_name: str = 'make_train'):
     """
