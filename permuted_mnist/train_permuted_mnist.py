@@ -238,23 +238,18 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             # Shuffle the data for the current task
             rng, _rng = jax.random.split(rng)
             data_permutation = jax.random.permutation(rng, examples_per_task)
-            x, y = x_all[data_permutation], y_all[data_permutation]
+            x_shuffled, y_shuffled = x_all[data_permutation], y_all[data_permutation]
 
-            runner_state = (
-                x,
-                y,
-                train_state, 
-                rng)
-            runner_state, res_info = update_task(runner_state, task)
-            x, y, train_state, rng = runner_state
-            rank_list.append(res_info['rank'])
-            eff_rank_list.append(res_info['effective_rank'])
-            approx_rank_list.append(res_info['approx_rank'])
-            dead_neurons_list.append(res_info['dead_neurons'])
+            # Split into train and eval sets
+            eval_size = args.eval_size
+            train_size = examples_per_task - eval_size
+            x_train, y_train = x_shuffled[:train_size], y_shuffled[:train_size]
+            x_eval, y_eval = x_shuffled[train_size:], y_shuffled[train_size:]
 
+            #compute hessian at the start of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
-                # TODO: Compute the Hessian
-                x_hessian, y_hessian = x[:args.compute_hessian_size], y[:args.compute_hessian_size]
+                # Hessian computation on test set
+                x_hessian, y_hessian = x_eval[:args.compute_hessian_size], y_eval[:args.compute_hessian_size]
                 hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
@@ -264,8 +259,67 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     order=100,
                     rng_key=rng
                 )
-                density, grids = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-                jax.debug.callback(plot_hessian_spectrum, grids, density, task, args.agent)
+                density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+
+                # Hessian computation on train set
+                x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_cl = lambda v: hvp_fn(train_state.params, v)
+                rng, _rng = jax.random.split(rng)
+                tridiag, lanczos_vecs = lanczos_alg(
+                    hvp_cl,
+                    num_params,
+                    order=100,
+                    rng_key=rng
+                )
+                density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True)
+
+
+
+            runner_state = (
+                x_train,
+                y_train,
+                train_state, 
+                rng)
+            runner_state, res_info = update_task(runner_state, task)
+            x_train, y_train, train_state, rng = runner_state
+            rank_list.append(res_info['rank'])
+            eff_rank_list.append(res_info['effective_rank'])
+            approx_rank_list.append(res_info['approx_rank'])
+            dead_neurons_list.append(res_info['dead_neurons'])
+
+
+            #compute hessian at the end of the task
+            if args.compute_hessian and task % args.compute_hessian_interval == 0:
+                # TODO: Compute the Hessian
+                x_hessian, y_hessian = x_eval[:args.compute_hessian_size], y_eval[:args.compute_hessian_size]
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_cl = lambda v: hvp_fn(train_state.params, v)
+                rng, _rng = jax.random.split(rng)
+                tridiag, lanczos_vecs = lanczos_alg(
+                    hvp_cl,
+                    num_params,
+                    order=100,
+                    rng_key=rng
+                )
+                density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+
+                # Hessian computation on train set
+                x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_cl = lambda v: hvp_fn(train_state.params, v)
+                rng, _rng = jax.random.split(rng)
+                tridiag, lanczos_vecs = lanczos_alg(
+                    hvp_cl,
+                    num_params,
+                    order=100,
+                    rng_key=rng
+                )
+                density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
+
+
 
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)
