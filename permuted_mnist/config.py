@@ -18,7 +18,7 @@ class PermutedMnistHyperparams(Hyperparams):
     lr: list[float] = [0.01]
     optimizer: Literal['adam', 'sgd'] = 'sgd'
     weight_decay: float = 0.001 # Do we use L2 regularization?
-    num_features: int = 100  # Number of input features
+    num_features: int = 1000  # Number of input features
     change_after: int = 10 * 6000  # Number of steps after which the task changes
     to_perturb: bool = False  # Whether to perturb the input data
     perturb_scale: int = 0.1
@@ -36,8 +36,8 @@ class PermutedMnistHyperparams(Hyperparams):
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?
     eval_size: int = 2000
-    compute_hessian: bool = False
-    compute_hessian_size: int = 100  # Number of samples to use for computing the hessian
+    compute_hessian: bool = True
+    compute_hessian_size: int = 2000  # Number of samples to use for computing the hessian
     compute_hessian_interval: int = 1
 
     def process_args(self) -> None:
