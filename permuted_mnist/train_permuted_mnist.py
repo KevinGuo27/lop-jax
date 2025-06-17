@@ -100,6 +100,21 @@ class EffectiveRankAgent:
         output, features = self.network.apply(params, x)
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
         return loss
+    
+    def perturb(self, params, perturb_scale, rng):
+        return perturb_params(params, rng, perturb_scale)
+
+def perturb_params(params, rng, scale):
+    """Add N(0, scale) noise to every parameter tensor in the tree."""
+    
+    leaves, treedef = jax.tree_util.tree_flatten(params)
+    rngs         = jax.random.split(rng, len(leaves))
+    
+    new_leaves = [
+        p + scale * jax.random.normal(r, p.shape, p.dtype)
+        for p, r in zip(leaves, rngs)
+    ]
+    return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
 
 def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
     network = DeepFFNN(
@@ -161,6 +176,11 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
 
                     grads = jax.grad(agent.loss)(train_state.params, minibatch_x, minibatch_y)
                     train_state = train_state.apply_gradients(grads=grads)
+
+                    if args.to_perturb:
+                        rng, _rng = jax.random.split(rng)
+                        new_params, rng = agent.perturb(train_state.params, args.perturb_scale, _rng)
+                        train_state = train_state.replace(params=new_params)
                     return (x, y, train_state, rng), (loss, accuracy)
                         
                 x, y, train_state, rng = runner_state
@@ -188,14 +208,6 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 return runner_state, (loss, accuracy)
 
             x, y, train_state, rng = runner_state
-            # x_all, y_all, train_state, rng = runner_state
-            # rng, _rng = jax.random.split(rng)
-            # pixel_permutation = jax.random.permutation(rng, input_size)
-            # x_all = x_all[:, pixel_permutation]
-            # # Shuffle the data for the current task
-            # rng, _rng = jax.random.split(rng)
-            # data_permutation = jax.random.permutation(rng, examples_per_task)
-            # x, y = x_all[data_permutation], y_all[data_permutation]
             update_erbatch_runner_state = (x, y, train_state, rng)
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(update_erbatch, update_erbatch_runner_state, 
                                         jnp.arange(0, examples_per_task, args.mini_batch_size * args.er_batch), 
@@ -274,8 +286,6 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True)
-
-
 
             runner_state = (
                 x_train,

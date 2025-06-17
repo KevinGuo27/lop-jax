@@ -33,6 +33,10 @@ class PermutedMnistHyperparams(Hyperparams):
     er_batch: int = 100
     er_step: int = 1
 
+    # Perturb
+    to_perturb: bool = False
+    perturb_scale: float = 1e-5
+
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?
     eval_size: int = 2000
