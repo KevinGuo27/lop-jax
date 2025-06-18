@@ -13,4 +13,4 @@ module load cuda cudnn
 module load python/3.11.0s-ixrhc3q
 source ~/pobax_baseline/bin/activate
 # run
-python train_permuted_mnist.py --debug
+python train_permuted_mnist.py --debug --lr 0.003 --agent cbp --weight_decay 0.0 --num_features 1000 --cont_backprop --compute_hessian --compute_hessian_interval 10 --compute_hessian_size 2000
