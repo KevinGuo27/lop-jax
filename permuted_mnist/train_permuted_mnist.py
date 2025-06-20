@@ -279,7 +279,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 # print the tridiag norm:
                 tridiag_norm = jnp.linalg.norm(tridiag)
                 jax.debug.print("Tridiag norm: {:.6f}", tridiag_norm)
-                density, grids = density_lib.tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                # density, grids = density_lib.tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                density, grids, effective_rank = density_lib.tridiag_to_density_and_erank([tridiag], grid_len=10000, sigma_squared=1e-5)
                 
                 # Use JAX debug callback to plot from within JIT
                 def plot_hessian_callback(grids, density, task_num):
