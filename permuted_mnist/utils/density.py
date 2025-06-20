@@ -159,3 +159,83 @@ def _kernel(x, x0, variance):
   val = jnp.exp(val)
   point_estimate = coeff * val
   return point_estimate
+
+
+def effective_rank_from_eigv(eig_vals, all_weights=None, eps=1e-8):
+  """Compute effective rank from eigenvalues using Shannon entropy.
+  
+  Args:
+    eig_vals: Array of shape [num_draws, order] containing eigenvalues
+    all_weights: Array of shape [num_draws, order] containing weights.
+      If None, uniform weights are used.
+    eps: Small value to avoid log(0)
+    
+  Returns:
+    effective_rank: Scalar effective rank averaged over all draws
+  """
+  if all_weights is None:
+    all_weights = jnp.ones(eig_vals.shape) * 1.0 / float(eig_vals.shape[1])
+  
+  # Average the eigenvalues across draws, weighted by their weights
+  weighted_eigvals = jnp.sum(eig_vals * all_weights, axis=0)
+  
+  # Normalize to get probabilities
+  total = jnp.maximum(jnp.sum(jnp.abs(weighted_eigvals)), eps)
+  p = jnp.abs(weighted_eigvals) / total
+  
+  # Compute Shannon entropy
+  entropy = -jnp.sum(jnp.where(p > eps, p * jnp.log(p), 0.0))
+  
+  # Effective rank is exp(entropy)
+  return jnp.exp(entropy)
+
+
+def tridiag_to_density_and_erank(tridiag_list, sigma_squared=1e-5, grid_len=10000):
+  """Compute both density and effective rank from tridiagonal matrices.
+  
+  Args:
+    tridiag_list: Array of shape [num_draws, order, order] List of the
+      tridiagonal matrices computed from running num_draws independent runs
+      of lanczos.
+    sigma_squared: Controls the smoothing of the density.
+    grid_len: Controls the granularity of the density.
+      
+  Returns:
+    density: Array of size [grid_len]. The smoothed density estimate.
+    grids: Array of size [grid_len]. The values the density estimate is on.
+    effective_rank: Scalar effective rank computed from eigenvalues.
+  """
+  eig_vals, all_weights = tridiag_to_eigv(tridiag_list)
+  density, grids = eigv_to_density(eig_vals, all_weights,
+                                   grid_len=grid_len,
+                                   sigma_squared=sigma_squared)
+  effective_rank = effective_rank_from_eigv(eig_vals, all_weights)
+  return density, grids, effective_rank
+
+
+def effective_rank_from_density(density, grids, eps=1e-8):
+  """Compute effective rank from eigenvalue density using Shannon entropy.
+  
+  This treats the density as a probability distribution over eigenvalues
+  and computes the Shannon entropy, which gives an effective rank measure.
+  
+  Args:
+    density: Array of shape [grid_len] containing the eigenvalue density
+    grids: Array of shape [grid_len] containing the grid points
+    eps: Small value to avoid log(0)
+    
+  Returns:
+    effective_rank: Scalar effective rank computed from the density
+  """
+  # Normalize density to ensure it integrates to 1 (probability distribution)
+  dx = grids[1] - grids[0]  # Grid spacing
+  total_mass = jnp.sum(density) * dx
+  normalized_density = density / jnp.maximum(total_mass, eps)
+  
+  # Compute Shannon entropy using the density as a probability distribution
+  # We need to account for the grid spacing in the entropy calculation
+  prob_mass = normalized_density * dx
+  entropy = -jnp.sum(jnp.where(prob_mass > eps, prob_mass * jnp.log(prob_mass), 0.0))
+  
+  # Effective rank is exp(entropy)
+  return jnp.exp(entropy)
