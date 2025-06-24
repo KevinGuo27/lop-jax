@@ -159,3 +159,50 @@ def _kernel(x, x0, variance):
   val = jnp.exp(val)
   point_estimate = coeff * val
   return point_estimate
+
+def effective_rank_from_eigv(eig_vals, eps=1e-8):
+    """
+    Effective rank per Roy & Vetterli (2007):
+        r_eff = exp( H(p) ),   p_i = |λ_i| / Σ|λ_j|.
+    Computes it *per Lanczos draw* and then averages.
+    
+    Args
+    ----
+    eig_vals : (num_draws, order) array
+        Eigenvalues returned by `tridiag_to_eigv`.
+    eps : float
+        Small constant to avoid division by zero / log(0).
+    
+    Returns
+    -------
+    rank : float
+        Average effective rank over draws.
+    """
+    abs_vals = jnp.abs(eig_vals)
+    p = abs_vals / (jnp.sum(abs_vals, axis=1, keepdims=True) + eps)
+    entropy = -jnp.sum(jnp.where(p > eps, p * jnp.log(p), 0.0), axis=1)
+    ranks = jnp.exp(entropy)
+    return jnp.mean(ranks)
+
+
+def tridiag_to_density_and_erank(tridiag_list, sigma_squared=1e-5, grid_len=10000):
+  """Compute both density and effective rank from tridiagonal matrices.
+  
+  Args:
+    tridiag_list: Array of shape [num_draws, order, order] List of the
+      tridiagonal matrices computed from running num_draws independent runs
+      of lanczos.
+    sigma_squared: Controls the smoothing of the density.
+    grid_len: Controls the granularity of the density.
+      
+  Returns:
+    density: Array of size [grid_len]. The smoothed density estimate.
+    grids: Array of size [grid_len]. The values the density estimate is on.
+    effective_rank: Scalar effective rank computed from eigenvalues.
+  """
+  eig_vals, all_weights = tridiag_to_eigv(tridiag_list)
+  density, grids = eigv_to_density(eig_vals, all_weights,
+                                   grid_len=grid_len,
+                                   sigma_squared=sigma_squared)
+  effective_rank = effective_rank_from_eigv(eig_vals)
+  return density, grids, effective_rank

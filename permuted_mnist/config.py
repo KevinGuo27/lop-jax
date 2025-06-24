@@ -12,7 +12,7 @@ class Hyperparams(Tap):
 
 class PermutedMnistHyperparams(Hyperparams):
     env: str = 'permuted_mnist'
-    aagent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2_er'
+    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2_er'
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
     lr: list[float] = [0.01]
@@ -35,6 +35,7 @@ class PermutedMnistHyperparams(Hyperparams):
 
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?
+    evaluate_previous: bool = False  # Do we evaluate on previous tasks?
     eval_size: int = 2000
     compute_hessian: bool = False
     compute_hessian_size: int = 2000  # Number of samples to use for computing the hessian

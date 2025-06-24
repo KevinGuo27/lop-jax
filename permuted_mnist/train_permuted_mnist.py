@@ -16,7 +16,8 @@ import orbax.checkpoint
 from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.hessian_computation import get_hvp_fn
 from utils.lanczos import lanczos_alg
-from utils.density import tridiag_to_density
+
+from utils.density import tridiag_to_density, tridiag_to_density_and_erank
 from cbp import ContinualBackpropTrainState
 
 def compute_param_norms(params):
@@ -136,6 +137,21 @@ class EffectiveRankAgent:
         output, features = self.network.apply(params, x)
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
         return loss
+    
+    def perturb(self, params, perturb_scale, rng):
+        return perturb_params(params, rng, perturb_scale)
+
+def perturb_params(params, rng, scale):
+    """Add N(0, scale) noise to every parameter tensor in the tree."""
+    
+    leaves, treedef = jax.tree_util.tree_flatten(params)
+    rngs = jax.random.split(rng, len(leaves))
+    
+    new_leaves = [
+        p + scale * jax.random.normal(r, p.shape, p.dtype)
+        for p, r in zip(leaves, rngs)
+    ]
+    return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
 
     def perturb(self, params, perturb_scale, rng):
         return perturb_params(params, rng, perturb_scale)
@@ -205,6 +221,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 params=network_params,
                 tx=tx,
             )
+
         assert (examples_per_task // args.mini_batch_size) % args.er_batch == 0, "ER batch size must divide examples per task"
         def update_task(runner_state, task):
             def update_erbatch(runner_state, batch_idx):
@@ -220,6 +237,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
 
                     grads = jax.grad(agent.loss)(train_state.params, minibatch_x, minibatch_y)
                     train_state = train_state.apply_gradients(grads=grads)
+                    
                     if args.to_perturb:
                         rng, _rng = jax.random.split(rng)
                         new_params, rng = agent.perturb(train_state.params, args.perturb_scale, _rng)
@@ -257,6 +275,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
 
             x, y, train_state, train_previous, rng = runner_state
             old_params = train_state.params.copy()
+
             update_erbatch_runner_state = (x, y, train_state, rng)
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(update_erbatch, update_erbatch_runner_state, 
                                         jnp.arange(0, examples_per_task, args.mini_batch_size * args.er_batch), 
@@ -342,7 +361,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     order=100,
                     rng_key=rng
                 )
-                density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                # density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                density_test, grids_test, effective_rank = tridiag_to_density_and_erank([tridiag], grid_len=10000, sigma_squared=1e-5)
+                jax.debug.print("Effective Rank at init: {er}", er=effective_rank)
 
                 # Hessian computation on train set
                 x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
