@@ -17,6 +17,7 @@ from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.hessian_computation import get_hvp_fn
 from utils.lanczos import lanczos_alg
 from utils.density import tridiag_to_density
+from cbp import ContinualBackpropTrainState
 
 def compute_param_norms(params):
     """Compute L1, L2, and L∞ norms of parameters"""
@@ -69,25 +70,42 @@ class Layer(nn.Module):
         return act_fn(x)
 
 class DeepFFNN(nn.Module):
-    """
-    A deep feedforward neural network with configurable depth and activations.
-
-    Returns both the final output and a list of activations from each layer.
-    """
     num_features: int = 2000
     num_outputs: int = 1
-    num_hidden_layers: int = 2
+    num_hidden_layers: int = 3
     act_type: str = 'relu'
 
     @nn.compact
     def __call__(self, x):
-        activations = []
-        out = Layer(out_dim=self.num_features, act_type=self.act_type)(x)
-        activations.append(out)
-        for _ in range(self.num_hidden_layers - 1):
-            out = Layer(out_dim=self.num_features, act_type=self.act_type)(out)
-            activations.append(out)
-        out = Layer(out_dim=self.num_outputs, act_type='linear')(out)
+        act = ACTIVATIONS[self.act_type]
+
+        out = nn.Dense(
+            self.num_features,
+            kernel_init=nn.initializers.kaiming_uniform(),
+            bias_init=nn.initializers.zeros,
+            name="layer_0",
+        )(x)
+        out = act(out)
+        activations = {'layer_0': None,
+                       'layer_1': out}
+
+        for i in range(1, self.num_hidden_layers):
+            out = nn.Dense(
+                self.num_features,
+                kernel_init=nn.initializers.kaiming_uniform(),
+                bias_init=nn.initializers.zeros,
+                name=f"layer_{i}",
+            )(out)
+            out = act(out)
+            activations[f'layer_{i+1}'] = out
+
+        out = nn.Dense(
+            self.num_outputs,
+            kernel_init=nn.initializers.kaiming_uniform(),
+            bias_init=nn.initializers.zeros,
+            name=f"layer_{self.num_hidden_layers}",
+        )(out)
+
         return out, activations
 
 class EffectiveRankAgent:
@@ -110,7 +128,7 @@ class EffectiveRankAgent:
     
     def effective_rank_loss(self, params, x):
         output, features = self.network.apply(params, x)
-        erank_losses = [self.effective_rank(f) for f in features]
+        erank_losses = [self.effective_rank(f) for f in features.values() if f is not None]
         loss_erank = - jnp.stack(erank_losses).mean()
         return loss_erank
 
@@ -118,6 +136,21 @@ class EffectiveRankAgent:
         output, features = self.network.apply(params, x)
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
         return loss
+
+    def perturb(self, params, perturb_scale, rng):
+        return perturb_params(params, rng, perturb_scale)
+
+def perturb_params(params, rng, scale):
+    """Add N(0, scale) noise to every parameter tensor in the tree."""
+    
+    leaves, treedef = jax.tree_util.tree_flatten(params)
+    rngs = jax.random.split(rng, len(leaves))
+    
+    new_leaves = [
+        p + scale * jax.random.normal(r, p.shape, p.dtype)
+        for p, r in zip(leaves, rngs)
+    ]
+    return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
 
 def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
     network = DeepFFNN(
@@ -152,18 +185,26 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         if args.no_anneal_lr:
             if args.optimizer == 'adam':
                 tx = optax.chain(
-                    optax.adamw(learning_rate=lr, weight_decay=args.weight_decay)
+                    optax.add_decayed_weights(args.weight_decay),
+                    adam_with_param_counts(learning_rate=lr, eps=1e-5)
                 )
             else:
                 tx = optax.chain(
                     optax.add_decayed_weights(args.weight_decay),
                     optax.sgd(learning_rate=lr)
                 )
-        train_state = TrainState.create(
-            apply_fn=network.apply,
-            params=network_params,
-            tx=tx,
-        )
+        if args.cont_backprop:
+            train_state = ContinualBackpropTrainState.create(
+                apply_fn=network.apply,
+                params=network_params,
+                tx=tx,
+            )
+        else:
+            train_state = TrainState.create(
+                apply_fn=network.apply,
+                params=network_params,
+                tx=tx,
+            )
         assert (examples_per_task // args.mini_batch_size) % args.er_batch == 0, "ER batch size must divide examples per task"
         def update_task(runner_state, task):
             def update_erbatch(runner_state, batch_idx):
@@ -173,12 +214,23 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
                     loss = agent.loss(train_state.params, minibatch_x, minibatch_y)
 
-                    logits, _ = agent.predict(train_state.params, minibatch_x)
+                    logits, activations = agent.predict(train_state.params, minibatch_x)
                     pred_labels = jnp.argmax(logits, axis=-1)
                     accuracy = jnp.mean(pred_labels == minibatch_y)
 
                     grads = jax.grad(agent.loss)(train_state.params, minibatch_x, minibatch_y)
                     train_state = train_state.apply_gradients(grads=grads)
+                    if args.to_perturb:
+                        rng, _rng = jax.random.split(rng)
+                        new_params, rng = agent.perturb(train_state.params, args.perturb_scale, _rng)
+                        train_state = train_state.replace(params=new_params)
+                    if args.cont_backprop:
+                        rng, _rng = jax.random.split(rng)
+                        train_state = train_state.update_and_reinit(_rng,
+                                                                    activations,
+                                                                    replacement_rate=args.replacement_rate,
+                                                                    decay_rate=args.decay_rate,
+                                                                    maturity_threshold=args.maturity_threshold)
                     return (x, y, train_state, rng), (loss, accuracy)
                         
                 x, y, train_state, rng = runner_state
@@ -187,8 +239,6 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 accuracy_runner_state = (batch_x, batch_y, train_state, rng)
                 accuracy_runner_state, (loss, accuracy) = jax.lax.scan(update_accuracy, accuracy_runner_state, jnp.arange(0, args.er_batch * args.mini_batch_size, args.mini_batch_size), args.er_batch)
                 train_state = accuracy_runner_state[2]
-                # runner_state = (x, y, train_state, rng)
-                # return runner_state, (loss, accuracy)
 
                 def update_erank(runner_state, _):
                     x, train_state, rng = runner_state
@@ -218,7 +268,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             # Evaluate the model on the current task
             x_eval, y_eval = x[:args.eval_size], y[:args.eval_size]
             output, features = agent.predict(train_state.params, x_eval)
-            rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features)
+            features_list = [f for f in features.values() if f is not None]
+            rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
             pred_labels = jnp.argmax(output, axis=-1)
             accuracy_eval = jnp.mean(pred_labels == y_eval)
 
@@ -321,7 +372,31 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             dead_neurons_list.append(res_info['dead_neurons'])
             
             if args.wandb:
-                wandb.log(res_info)
+                def log_to_wandb(loss, accuracy, rank, eff_rank, approx_rank, dead_neurons, 
+                               acc_eval, acc_pre, l1_change, l2_change, linf_change, task_num):
+                    wandb_info = {
+                        'loss': float(loss),
+                        'accuracy': float(accuracy),
+                        'rank': float(jnp.mean(rank)),
+                        'effective_rank': float(jnp.mean(eff_rank)),
+                        'approx_rank': float(jnp.mean(approx_rank)),
+                        'dead_neurons': float(jnp.mean(dead_neurons)),
+                        'accuracy_eval': float(acc_eval),
+                        'accuracy_pre': float(acc_pre),
+                        'l1_norm_change': float(l1_change),
+                        'l2_norm_change': float(l2_change),
+                        'linf_norm_change': float(linf_change),
+                        'task': int(task_num)
+                    }
+                    wandb.log(wandb_info)
+                
+                jax.debug.callback(log_to_wandb, 
+                                 jnp.mean(res_info['loss']), res_info['accuracy'], 
+                                 res_info['rank'], res_info['effective_rank'], 
+                                 res_info['approx_rank'], res_info['dead_neurons'],
+                                 res_info['accuracy_eval'], res_info['accuracy_pre'],
+                                 res_info['l1_norm_change'], res_info['l2_norm_change'], 
+                                 res_info['linf_norm_change'], task)
 
             #compute hessian at the end of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:

@@ -1,0 +1,18 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 11826037
+##  Job Name : slurm.sh
+##  Nodelist : gpu2002
+##      CPUs : 1
+##  Mem/Node : 65536 MB
+## Directory : /oscar/home/nhe6/Documents/rl-opt
+##   Job Started : Tue Jun 24 11:56:26 AM EDT 2025
+###############################################################################
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: arniehe2004 (rl-power). Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.1
+wandb: Run data is saved locally in /oscar/home/nhe6/Documents/rl-opt/wandb/run-20250624_115655-lv4kmxrn
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run bp_relu_[0.01]_[0.01]_100_1_1000_3_800_1_100_1
+wandb: ⭐️ View project at https://wandb.ai/rl-power/permuted_mnist
+wandb: 🚀 View run at https://wandb.ai/rl-power/permuted_mnist/runs/lv4kmxrn
+slurmstepd: error: *** JOB 11826037 ON gpu2002 CANCELLED AT 2025-06-24T12:09:07 ***
