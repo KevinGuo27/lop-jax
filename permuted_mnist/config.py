@@ -18,7 +18,7 @@ class PermutedMnistHyperparams(Hyperparams):
     lr: list[float] = [0.01]
     optimizer: Literal['adam', 'sgd'] = 'sgd'
     weight_decay: float = 0.001 # Do we use L2 regularization?
-    num_features: int = 100  # Number of input features
+    num_features: int = 1000  # Number of input features
     change_after: int = 10 * 6000  # Number of steps after which the task changes
     to_perturb: bool = False  # Whether to perturb the input data
     perturb_scale: int = 1e-5
@@ -38,7 +38,7 @@ class PermutedMnistHyperparams(Hyperparams):
     evaluate_previous: bool = False  # Do we evaluate on previous tasks?
     eval_size: int = 2000
     compute_hessian: bool = False
-    compute_hessian_size: int = 100  # Number of samples to use for computing the hessian
+    compute_hessian_size: int = 2000  # Number of samples to use for computing the hessian
     compute_hessian_interval: int = 1
 
     # CBP
@@ -46,6 +46,12 @@ class PermutedMnistHyperparams(Hyperparams):
     replacement_rate: float = 1e-6
     decay_rate: float = 0.99
     maturity_threshold: int = 100
+
+    # wandb
+    wandb: bool = True
+    wandb_project: str = 'permuted_mnist'
+    wandb_group: str = 'test'
+    wandb_entity: str = 'rl-power'
 
     def process_args(self) -> None:
         self.lr = jnp.array(self.lr)

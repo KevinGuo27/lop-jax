@@ -1,0 +1,347 @@
+_action_groups:
+    value:
+        - <argparse._ArgumentGroup object at 0x7f8bd0737150>
+        - <argparse._ArgumentGroup object at 0x7f8bd0430a10>
+_actions:
+    value:
+        - _StoreAction(option_strings=['--env'], dest='env', nargs=None, const=None, default='permuted_mnist', type=<class 'str'>, choices=None, required=False, help='(str, default=permuted_mnist) ', metavar=None)
+        - _StoreAction(option_strings=['--agent'], dest='agent', nargs=None, const=None, default='l2_er', type=<function get_literals.<locals>.var_type at 0x7f8bd04ebce0>, choices=['er', 'bp', 'l2', 'cbp', 'l2_er'], required=False, help="(Literal['er', 'bp', 'l2', 'cbp', 'l2_er'], default=l2_er) ", metavar=None)
+        - _StoreAction(option_strings=['--alg'], dest='alg', nargs=None, const=None, default='ppo', type=<function get_literals.<locals>.var_type at 0x7f8bd04ebba0>, choices=['actor_critic', 'ppo'], required=False, help="(Literal['actor_critic', 'ppo'], default=ppo) ", metavar=None)
+        - _StoreAction(option_strings=['--activation'], dest='activation', nargs=None, const=None, default='relu', type=<function get_literals.<locals>.var_type at 0x7f8bd04ebb00>, choices=['relu', 'tanh'], required=False, help="(Literal['relu', 'tanh'], default=relu) ", metavar=None)
+        - _StoreAction(option_strings=['--lr'], dest='lr', nargs='*', const=None, default=[0.01], type=<class 'float'>, choices=None, required=False, help='(list[float], default=[0.01]) ', metavar=None)
+        - _StoreAction(option_strings=['--optimizer'], dest='optimizer', nargs=None, const=None, default='sgd', type=<function get_literals.<locals>.var_type at 0x7f8bd04eba60>, choices=['adam', 'sgd'], required=False, help="(Literal['adam', 'sgd'], default=sgd) ", metavar=None)
+        - _StoreAction(option_strings=['--weight_decay'], dest='weight_decay', nargs=None, const=None, default=0.001, type=<class 'float'>, choices=None, required=False, help='(float, default=0.001) Do we use L2 regularization?', metavar=None)
+        - _StoreAction(option_strings=['--num_features'], dest='num_features', nargs=None, const=None, default=1000, type=<class 'int'>, choices=None, required=False, help='(int, default=1000) Number of input features', metavar=None)
+        - _StoreAction(option_strings=['--change_after'], dest='change_after', nargs=None, const=None, default=60000, type=<class 'int'>, choices=None, required=False, help='(int, default=60000) Number of steps after which the task changes', metavar=None)
+        - _StoreTrueAction(option_strings=['--to_perturb'], dest='to_perturb', nargs=0, const=True, default=False, type=None, choices=None, required=False, help='(bool, default=False) Whether to perturb the input data', metavar=None)
+        - _StoreAction(option_strings=['--perturb_scale'], dest='perturb_scale', nargs=None, const=None, default=0.1, type=<class 'int'>, choices=None, required=False, help='(int, default=0.1) ', metavar=None)
+        - _StoreAction(option_strings=['--num_hidden_layers'], dest='num_hidden_layers', nargs=None, const=None, default=3, type=<class 'int'>, choices=None, required=False, help='(int, default=3) ', metavar=None)
+        - _StoreAction(option_strings=['--mini_batch_size'], dest='mini_batch_size', nargs=None, const=None, default=1, type=<class 'int'>, choices=None, required=False, help='(int, default=1) ', metavar=None)
+        - _StoreFalseAction(option_strings=['--no_anneal_lr'], dest='no_anneal_lr', nargs=0, const=False, default=True, type=None, choices=None, required=False, help='(bool, default=True) ', metavar=None)
+        - _StoreAction(option_strings=['--max_grad_norm'], dest='max_grad_norm', nargs=None, const=None, default=0.5, type=<class 'float'>, choices=None, required=False, help='(float, default=0.5) ', metavar=None)
+        - _StoreAction(option_strings=['--num_tasks'], dest='num_tasks', nargs=None, const=None, default=800, type=<class 'int'>, choices=None, required=False, help='(int, default=800) Number of tasks in the permuted MNIST', metavar=None)
+        - _StoreAction(option_strings=['--er_lr'], dest='er_lr', nargs='*', const=None, default=[0.01], type=<class 'float'>, choices=None, required=False, help='(list[float], default=[0.01]) ', metavar=None)
+        - _StoreAction(option_strings=['--er_batch'], dest='er_batch', nargs=None, const=None, default=100, type=<class 'int'>, choices=None, required=False, help='(int, default=100) ', metavar=None)
+        - _StoreAction(option_strings=['--er_step'], dest='er_step', nargs=None, const=None, default=1, type=<class 'int'>, choices=None, required=False, help='(int, default=1) ', metavar=None)
+        - _StoreFalseAction(option_strings=['--evaluate'], dest='evaluate', nargs=0, const=False, default=True, type=None, choices=None, required=False, help='(bool, default=True) Do we evaluate after each task?', metavar=None)
+        - _StoreAction(option_strings=['--eval_size'], dest='eval_size', nargs=None, const=None, default=2000, type=<class 'int'>, choices=None, required=False, help='(int, default=2000) ', metavar=None)
+        - _StoreTrueAction(option_strings=['--compute_hessian'], dest='compute_hessian', nargs=0, const=True, default=False, type=None, choices=None, required=False, help='(bool, default=False) ', metavar=None)
+        - _StoreAction(option_strings=['--compute_hessian_size'], dest='compute_hessian_size', nargs=None, const=None, default=2000, type=<class 'int'>, choices=None, required=False, help='(int, default=2000) Number of samples to use for computing the hessian', metavar=None)
+        - _StoreAction(option_strings=['--compute_hessian_interval'], dest='compute_hessian_interval', nargs=None, const=None, default=1, type=<class 'int'>, choices=None, required=False, help='(int, default=1) ', metavar=None)
+        - _StoreFalseAction(option_strings=['--wandb'], dest='wandb', nargs=0, const=False, default=True, type=None, choices=None, required=False, help='(bool, default=True) ', metavar=None)
+        - _StoreAction(option_strings=['--wandb_project'], dest='wandb_project', nargs=None, const=None, default='permuted_mnist', type=<class 'str'>, choices=None, required=False, help='(str, default=permuted_mnist) ', metavar=None)
+        - _StoreAction(option_strings=['--wandb_group'], dest='wandb_group', nargs=None, const=None, default='test', type=<class 'str'>, choices=None, required=False, help='(str, default=test) ', metavar=None)
+        - _StoreAction(option_strings=['--wandb_entity'], dest='wandb_entity', nargs=None, const=None, default='rl-power', type=<class 'str'>, choices=None, required=False, help='(str, default=rl-power) ', metavar=None)
+        - _StoreAction(option_strings=['--study_name'], dest='study_name', nargs=None, const=None, default='test', type=<class 'str'>, choices=None, required=False, help='(str, default=test) ', metavar=None)
+        - _StoreAction(option_strings=['--seed'], dest='seed', nargs=None, const=None, default=2024, type=<class 'int'>, choices=None, required=False, help='(int, default=2024) ', metavar=None)
+        - _StoreTrueAction(option_strings=['--debug'], dest='debug', nargs=0, const=True, default=False, type=None, choices=None, required=False, help='(bool, default=False) ', metavar=None)
+        - _StoreAction(option_strings=['--platform'], dest='platform', nargs=None, const=None, default='gpu', type=<function get_literals.<locals>.var_type at 0x7f8bd04eb600>, choices=['cpu', 'gpu'], required=False, help="(Literal['cpu', 'gpu'], default=gpu) ", metavar=None)
+        - _StoreAction(option_strings=['--n_seeds'], dest='n_seeds', nargs=None, const=None, default=1, type=<class 'int'>, choices=None, required=False, help='(int, default=1) ', metavar=None)
+        - _HelpAction(option_strings=['-h', '--help'], dest='help', nargs=0, const=None, default='==SUPPRESS==', type=None, choices=None, required=False, help='show this help message and exit', metavar=None)
+_annotations:
+    value:
+        activation: typing.Literal
+        agent: typing.Literal
+        alg: typing.Literal
+        change_after: builtins.int
+        compute_hessian: builtins.bool
+        compute_hessian_interval: builtins.int
+        compute_hessian_size: builtins.int
+        debug: builtins.bool
+        env: builtins.str
+        er_batch: builtins.int
+        er_lr: builtins.list
+        er_step: builtins.int
+        eval_size: builtins.int
+        evaluate: builtins.bool
+        lr: builtins.list
+        max_grad_norm: builtins.float
+        mini_batch_size: builtins.int
+        n_seeds: builtins.int
+        no_anneal_lr: builtins.bool
+        num_features: builtins.int
+        num_hidden_layers: builtins.int
+        num_tasks: builtins.int
+        optimizer: typing.Literal
+        perturb_scale: builtins.int
+        platform: typing.Literal
+        seed: builtins.int
+        study_name: builtins.str
+        to_perturb: builtins.bool
+        wandb: builtins.bool
+        wandb_entity: builtins.str
+        wandb_group: builtins.str
+        wandb_project: builtins.str
+        weight_decay: builtins.float
+_explicit_bool:
+    value: false
+_has_negative_number_optionals:
+    value: []
+_initialized:
+    value: true
+_mutually_exclusive_groups:
+    value: []
+_negative_number_matcher:
+    value: re.compile('^-\\d+$|^-\\d*\\.\\d+$')
+_option_string_actions:
+    value:
+        --activation: _StoreAction(option_strings=['--activation'], dest='activation', nargs=None, const=None, default='relu', type=<function get_literals.<locals>.var_type at 0x7f8bd04ebb00>, choices=['relu', 'tanh'], required=False, help="(Literal['relu', 'tanh'], default=relu) ", metavar=None)
+        --agent: _StoreAction(option_strings=['--agent'], dest='agent', nargs=None, const=None, default='l2_er', type=<function get_literals.<locals>.var_type at 0x7f8bd04ebce0>, choices=['er', 'bp', 'l2', 'cbp', 'l2_er'], required=False, help="(Literal['er', 'bp', 'l2', 'cbp', 'l2_er'], default=l2_er) ", metavar=None)
+        --alg: _StoreAction(option_strings=['--alg'], dest='alg', nargs=None, const=None, default='ppo', type=<function get_literals.<locals>.var_type at 0x7f8bd04ebba0>, choices=['actor_critic', 'ppo'], required=False, help="(Literal['actor_critic', 'ppo'], default=ppo) ", metavar=None)
+        --change_after: _StoreAction(option_strings=['--change_after'], dest='change_after', nargs=None, const=None, default=60000, type=<class 'int'>, choices=None, required=False, help='(int, default=60000) Number of steps after which the task changes', metavar=None)
+        --compute_hessian: _StoreTrueAction(option_strings=['--compute_hessian'], dest='compute_hessian', nargs=0, const=True, default=False, type=None, choices=None, required=False, help='(bool, default=False) ', metavar=None)
+        --compute_hessian_interval: _StoreAction(option_strings=['--compute_hessian_interval'], dest='compute_hessian_interval', nargs=None, const=None, default=1, type=<class 'int'>, choices=None, required=False, help='(int, default=1) ', metavar=None)
+        --compute_hessian_size: _StoreAction(option_strings=['--compute_hessian_size'], dest='compute_hessian_size', nargs=None, const=None, default=2000, type=<class 'int'>, choices=None, required=False, help='(int, default=2000) Number of samples to use for computing the hessian', metavar=None)
+        --debug: _StoreTrueAction(option_strings=['--debug'], dest='debug', nargs=0, const=True, default=False, type=None, choices=None, required=False, help='(bool, default=False) ', metavar=None)
+        --env: _StoreAction(option_strings=['--env'], dest='env', nargs=None, const=None, default='permuted_mnist', type=<class 'str'>, choices=None, required=False, help='(str, default=permuted_mnist) ', metavar=None)
+        --er_batch: _StoreAction(option_strings=['--er_batch'], dest='er_batch', nargs=None, const=None, default=100, type=<class 'int'>, choices=None, required=False, help='(int, default=100) ', metavar=None)
+        --er_lr: _StoreAction(option_strings=['--er_lr'], dest='er_lr', nargs='*', const=None, default=[0.01], type=<class 'float'>, choices=None, required=False, help='(list[float], default=[0.01]) ', metavar=None)
+        --er_step: _StoreAction(option_strings=['--er_step'], dest='er_step', nargs=None, const=None, default=1, type=<class 'int'>, choices=None, required=False, help='(int, default=1) ', metavar=None)
+        --eval_size: _StoreAction(option_strings=['--eval_size'], dest='eval_size', nargs=None, const=None, default=2000, type=<class 'int'>, choices=None, required=False, help='(int, default=2000) ', metavar=None)
+        --evaluate: _StoreFalseAction(option_strings=['--evaluate'], dest='evaluate', nargs=0, const=False, default=True, type=None, choices=None, required=False, help='(bool, default=True) Do we evaluate after each task?', metavar=None)
+        --help: _HelpAction(option_strings=['-h', '--help'], dest='help', nargs=0, const=None, default='==SUPPRESS==', type=None, choices=None, required=False, help='show this help message and exit', metavar=None)
+        --lr: _StoreAction(option_strings=['--lr'], dest='lr', nargs='*', const=None, default=[0.01], type=<class 'float'>, choices=None, required=False, help='(list[float], default=[0.01]) ', metavar=None)
+        --max_grad_norm: _StoreAction(option_strings=['--max_grad_norm'], dest='max_grad_norm', nargs=None, const=None, default=0.5, type=<class 'float'>, choices=None, required=False, help='(float, default=0.5) ', metavar=None)
+        --mini_batch_size: _StoreAction(option_strings=['--mini_batch_size'], dest='mini_batch_size', nargs=None, const=None, default=1, type=<class 'int'>, choices=None, required=False, help='(int, default=1) ', metavar=None)
+        --n_seeds: _StoreAction(option_strings=['--n_seeds'], dest='n_seeds', nargs=None, const=None, default=1, type=<class 'int'>, choices=None, required=False, help='(int, default=1) ', metavar=None)
+        --no_anneal_lr: _StoreFalseAction(option_strings=['--no_anneal_lr'], dest='no_anneal_lr', nargs=0, const=False, default=True, type=None, choices=None, required=False, help='(bool, default=True) ', metavar=None)
+        --num_features: _StoreAction(option_strings=['--num_features'], dest='num_features', nargs=None, const=None, default=1000, type=<class 'int'>, choices=None, required=False, help='(int, default=1000) Number of input features', metavar=None)
+        --num_hidden_layers: _StoreAction(option_strings=['--num_hidden_layers'], dest='num_hidden_layers', nargs=None, const=None, default=3, type=<class 'int'>, choices=None, required=False, help='(int, default=3) ', metavar=None)
+        --num_tasks: _StoreAction(option_strings=['--num_tasks'], dest='num_tasks', nargs=None, const=None, default=800, type=<class 'int'>, choices=None, required=False, help='(int, default=800) Number of tasks in the permuted MNIST', metavar=None)
+        --optimizer: _StoreAction(option_strings=['--optimizer'], dest='optimizer', nargs=None, const=None, default='sgd', type=<function get_literals.<locals>.var_type at 0x7f8bd04eba60>, choices=['adam', 'sgd'], required=False, help="(Literal['adam', 'sgd'], default=sgd) ", metavar=None)
+        --perturb_scale: _StoreAction(option_strings=['--perturb_scale'], dest='perturb_scale', nargs=None, const=None, default=0.1, type=<class 'int'>, choices=None, required=False, help='(int, default=0.1) ', metavar=None)
+        --platform: _StoreAction(option_strings=['--platform'], dest='platform', nargs=None, const=None, default='gpu', type=<function get_literals.<locals>.var_type at 0x7f8bd04eb600>, choices=['cpu', 'gpu'], required=False, help="(Literal['cpu', 'gpu'], default=gpu) ", metavar=None)
+        --seed: _StoreAction(option_strings=['--seed'], dest='seed', nargs=None, const=None, default=2024, type=<class 'int'>, choices=None, required=False, help='(int, default=2024) ', metavar=None)
+        --study_name: _StoreAction(option_strings=['--study_name'], dest='study_name', nargs=None, const=None, default='test', type=<class 'str'>, choices=None, required=False, help='(str, default=test) ', metavar=None)
+        --to_perturb: _StoreTrueAction(option_strings=['--to_perturb'], dest='to_perturb', nargs=0, const=True, default=False, type=None, choices=None, required=False, help='(bool, default=False) Whether to perturb the input data', metavar=None)
+        --wandb: _StoreFalseAction(option_strings=['--wandb'], dest='wandb', nargs=0, const=False, default=True, type=None, choices=None, required=False, help='(bool, default=True) ', metavar=None)
+        --wandb_entity: _StoreAction(option_strings=['--wandb_entity'], dest='wandb_entity', nargs=None, const=None, default='rl-power', type=<class 'str'>, choices=None, required=False, help='(str, default=rl-power) ', metavar=None)
+        --wandb_group: _StoreAction(option_strings=['--wandb_group'], dest='wandb_group', nargs=None, const=None, default='test', type=<class 'str'>, choices=None, required=False, help='(str, default=test) ', metavar=None)
+        --wandb_project: _StoreAction(option_strings=['--wandb_project'], dest='wandb_project', nargs=None, const=None, default='permuted_mnist', type=<class 'str'>, choices=None, required=False, help='(str, default=permuted_mnist) ', metavar=None)
+        --weight_decay: _StoreAction(option_strings=['--weight_decay'], dest='weight_decay', nargs=None, const=None, default=0.001, type=<class 'float'>, choices=None, required=False, help='(float, default=0.001) Do we use L2 regularization?', metavar=None)
+        -h: _HelpAction(option_strings=['-h', '--help'], dest='help', nargs=0, const=None, default='==SUPPRESS==', type=None, choices=None, required=False, help='show this help message and exit', metavar=None)
+_optionals:
+    value: <argparse._ArgumentGroup object at 0x7f8bd0430a10>
+_parsed:
+    value: true
+_positionals:
+    value: <argparse._ArgumentGroup object at 0x7f8bd0737150>
+_registries:
+    value:
+        action:
+            append: argparse._AppendAction
+            append_const: argparse._AppendConstAction
+            count: argparse._CountAction
+            extend: argparse._ExtendAction
+            help: argparse._HelpAction
+            "null": argparse._StoreAction
+            parsers: argparse._SubParsersAction
+            store: argparse._StoreAction
+            store_const: argparse._StoreConstAction
+            store_false: argparse._StoreFalseAction
+            store_true: argparse._StoreTrueAction
+            version: argparse._VersionAction
+        type:
+            "null": argparse.ArgumentParser.__init__.<locals>.identity
+_subparser_buffer:
+    value: []
+_subparsers:
+    value: null
+_underscores_to_dashes:
+    value: false
+_wandb:
+    value:
+        cli_version: 0.19.1
+        m: []
+        python_version: 3.11.0
+        t:
+            "1":
+                - 1
+                - 12
+                - 45
+                - 55
+            "2":
+                - 1
+                - 12
+                - 45
+                - 55
+            "3":
+                - 13
+                - 23
+                - 55
+            "4": 3.11.0
+            "5": 0.19.1
+            "8":
+                - 5
+            "12": 0.19.1
+            "13": linux-x86_64
+activation:
+    value: relu
+add_help:
+    value: true
+agent:
+    value: bp
+alg:
+    value: ppo
+allow_abbrev:
+    value: true
+args_from_configs:
+    value: []
+argument_buffer:
+    value:
+        help:
+            - - -h
+              - --help
+            - action: help
+              default: ==SUPPRESS==
+              help: show this help message and exit
+argument_default:
+    value: null
+change_after:
+    value: 60000
+class_variables:
+    value:
+        activation:
+            comment: ""
+        agent:
+            comment: ""
+        alg:
+            comment: ""
+        change_after:
+            comment: Number of steps after which the task changes
+        compute_hessian:
+            comment: ""
+        compute_hessian_interval:
+            comment: ""
+        compute_hessian_size:
+            comment: Number of samples to use for computing the hessian
+        debug:
+            comment: ""
+        env:
+            comment: ""
+        er_batch:
+            comment: ""
+        er_lr:
+            comment: ""
+        er_step:
+            comment: ""
+        eval_size:
+            comment: ""
+        evaluate:
+            comment: Do we evaluate after each task?
+        lr:
+            comment: ""
+        max_grad_norm:
+            comment: ""
+        mini_batch_size:
+            comment: ""
+        n_seeds:
+            comment: ""
+        no_anneal_lr:
+            comment: ""
+        num_features:
+            comment: Number of input features
+        num_hidden_layers:
+            comment: ""
+        num_tasks:
+            comment: Number of tasks in the permuted MNIST
+        optimizer:
+            comment: ""
+        perturb_scale:
+            comment: ""
+        platform:
+            comment: ""
+        seed:
+            comment: ""
+        study_name:
+            comment: ""
+        to_perturb:
+            comment: Whether to perturb the input data
+        wandb:
+            comment: ""
+        wandb_entity:
+            comment: ""
+        wandb_group:
+            comment: ""
+        wandb_project:
+            comment: ""
+        weight_decay:
+            comment: Do we use L2 regularization?
+compute_hessian:
+    value: false
+compute_hessian_interval:
+    value: 1
+compute_hessian_size:
+    value: 2000
+conflict_handler:
+    value: error
+debug:
+    value: true
+description:
+    value: null
+env:
+    value: permuted_mnist
+epilog:
+    value: null
+er_batch:
+    value: 100
+er_lr:
+    value: "0.01"
+er_step:
+    value: 1
+eval_size:
+    value: 2000
+evaluate:
+    value: true
+exit_on_error:
+    value: true
+extra_args:
+    value: []
+formatter_class:
+    value: argparse.HelpFormatter
+fromfile_prefix_chars:
+    value: null
+lr:
+    value: "0.01"
+max_grad_norm:
+    value: 0.5
+mini_batch_size:
+    value: 1
+n_seeds:
+    value: 1
+no_anneal_lr:
+    value: true
+num_features:
+    value: 1000
+num_hidden_layers:
+    value: 3
+num_tasks:
+    value: 800
+optimizer:
+    value: sgd
+perturb_scale:
+    value: 0.1
+platform:
+    value: gpu
+prefix_chars:
+    value: '-'
+prog:
+    value: train_permuted_mnist.py
+seed:
+    value: 2024
+study_name:
+    value: test
+to_perturb:
+    value: false
+usage:
+    value: null
+wandb:
+    value: true
+wandb_entity:
+    value: rl-power
+wandb_group:
+    value: test
+wandb_project:
+    value: permuted_mnist
+weight_decay:
+    value: 0.001

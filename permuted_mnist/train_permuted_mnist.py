@@ -16,8 +16,27 @@ import orbax.checkpoint
 from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.hessian_computation import get_hvp_fn
 from utils.lanczos import lanczos_alg
+
 from utils.density import tridiag_to_density, tridiag_to_density_and_erank
 from cbp import ContinualBackpropTrainState
+
+def compute_param_norms(params):
+    """Compute L1, L2, and L∞ norms of parameters"""
+    # Flatten all parameters into a single array
+    flat_params = jax.tree_util.tree_leaves(params)
+    flat_params = jnp.concatenate([p.flatten() for p in flat_params])
+    
+    l1_norm = jnp.sum(jnp.abs(flat_params))
+    l2_norm = jnp.sqrt(jnp.sum(flat_params ** 2))
+    linf_norm = jnp.max(jnp.abs(flat_params))
+    
+    return l1_norm, l2_norm, linf_norm
+
+def compute_param_change_norms(old_params, new_params):
+    """Compute L1, L2, and L∞ norms of parameter changes"""
+    # Compute parameter differences
+    param_diff = jax.tree_util.tree_map(lambda x, y: x - y, new_params, old_params)
+    return compute_param_norms(param_diff)
 
 # Mapping of activation names to functions
 ACTIVATIONS = {
@@ -61,7 +80,6 @@ class DeepFFNN(nn.Module):
     def __call__(self, x):
         act = ACTIVATIONS[self.act_type]
 
-        # ---------- dense_0 ----------
         out = nn.Dense(
             self.num_features,
             kernel_init=nn.initializers.kaiming_uniform(),
@@ -135,6 +153,21 @@ def perturb_params(params, rng, scale):
     ]
     return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
 
+    def perturb(self, params, perturb_scale, rng):
+        return perturb_params(params, rng, perturb_scale)
+
+def perturb_params(params, rng, scale):
+    """Add N(0, scale) noise to every parameter tensor in the tree."""
+    
+    leaves, treedef = jax.tree_util.tree_flatten(params)
+    rngs = jax.random.split(rng, len(leaves))
+    
+    new_leaves = [
+        p + scale * jax.random.normal(r, p.shape, p.dtype)
+        for p, r in zip(leaves, rngs)
+    ]
+    return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
+
 def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
     network = DeepFFNN(
         num_features=args.num_features,
@@ -188,7 +221,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 params=network_params,
                 tx=tx,
             )
-        
+
         assert (examples_per_task // args.mini_batch_size) % args.er_batch == 0, "ER batch size must divide examples per task"
         def update_task(runner_state, task):
             def update_erbatch(runner_state, batch_idx):
@@ -204,7 +237,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
 
                     grads = jax.grad(agent.loss)(train_state.params, minibatch_x, minibatch_y)
                     train_state = train_state.apply_gradients(grads=grads)
-
+                    
                     if args.to_perturb:
                         rng, _rng = jax.random.split(rng)
                         new_params, rng = agent.perturb(train_state.params, args.perturb_scale, _rng)
@@ -240,7 +273,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 runner_state = (x, y, train_state, rng)
                 return runner_state, (loss, accuracy)
 
-            x, y, train_state, rng = runner_state
+            x, y, train_state, train_previous, rng = runner_state
+            old_params = train_state.params.copy()
+
             update_erbatch_runner_state = (x, y, train_state, rng)
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(update_erbatch, update_erbatch_runner_state, 
                                         jnp.arange(0, examples_per_task, args.mini_batch_size * args.er_batch), 
@@ -256,8 +291,17 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
             pred_labels = jnp.argmax(output, axis=-1)
             accuracy_eval = jnp.mean(pred_labels == y_eval)
+
+            # Evaluate the model on the previous train set
+            x_pretrain, y_pretrain = train_previous
+            output, features = agent.predict(train_state.params, x_pretrain)
+            pred_labels = jnp.argmax(output, axis=-1)
+            accuracy_pre = jnp.mean(pred_labels == y_pretrain)
+
+            l1_norm_change, l2_norm_change, linf_norm_change = compute_param_change_norms(old_params, train_state.params)
+
             if args.debug:
-                jax.debug.print("Task {t}: Train Accuracy {acc}, Eval Accuracy = {acc_eval}", t=task, acc=accuracy, acc_eval=accuracy_eval)
+                jax.debug.print("Task {t}: Train Accuracy {acc}, Eval Accuracy = {acc_eval}, acc on previous train set = {acc_pretrain}, L1 norm change = {l1_norm_change}, L2 norm change = {l2_norm_change}, Linf norm change = {linf_norm_change}", t=task, acc=accuracy, acc_eval=accuracy_eval, acc_pretrain=accuracy_pre, l1_norm_change=l1_norm_change, l2_norm_change=l2_norm_change, linf_norm_change=linf_norm_change)
                 jax.debug.print(
                     "Rank: {r}, EffRank: {er}, ApproxRank: {ar}, DeadNeurons: {dn}",
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
@@ -269,14 +313,28 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 'rank': rank,
                 'effective_rank': effective_rank,
                 'approx_rank': approx_rank,
-                'dead_neurons': dead_neurons
+                'dead_neurons': dead_neurons,
+                'accuracy_eval': accuracy_eval,
+                'accuracy_pre': accuracy_pre,
+                'l1_norm_change': l1_norm_change,
+                'l2_norm_change': l2_norm_change,
+                'linf_norm_change': linf_norm_change
             }
                 
             return runner_state, res_info
 
         loss_list, acc_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], []
         update_task = jax.jit(update_task)
+        if args.wandb:
+            import wandb
+            name = f"{args.agent}_{args.activation}_{args.lr}_{args.er_lr}_{args.er_batch}_{args.er_step}_{args.num_features}_{args.num_hidden_layers}_{args.num_tasks}_{args.mini_batch_size}_{args.er_batch}_{args.er_step}"
+            wandb.init(project=args.wandb_project, name=name, entity=args.wandb_entity, group=args.wandb_group)
+            wandb.config.update(args)
         for task in range(num_tasks):
+            eval_size = args.eval_size
+            train_size = examples_per_task - eval_size
+            # Record the previous train set
+            train_previous = (x_all[train_size:], y_all[train_size:])
             # permuted dataset
             rng, _rng = jax.random.split(rng)
             pixel_permutation = jax.random.permutation(rng, input_size)
@@ -287,8 +345,6 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             x_shuffled, y_shuffled = x_all[data_permutation], y_all[data_permutation]
 
             # Split into train and eval sets
-            eval_size = args.eval_size
-            train_size = examples_per_task - eval_size
             x_train, y_train = x_shuffled[:train_size], y_shuffled[:train_size]
             x_eval, y_eval = x_shuffled[train_size:], y_shuffled[train_size:]
 
@@ -326,7 +382,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             runner_state = (
                 x_train,
                 y_train,
-                train_state, 
+                train_state,
+                train_previous, 
                 rng)
             runner_state, res_info = update_task(runner_state, task)
             x_train, y_train, train_state, rng = runner_state
@@ -334,7 +391,33 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             eff_rank_list.append(res_info['effective_rank'])
             approx_rank_list.append(res_info['approx_rank'])
             dead_neurons_list.append(res_info['dead_neurons'])
-
+            
+            if args.wandb:
+                def log_to_wandb(loss, accuracy, rank, eff_rank, approx_rank, dead_neurons, 
+                               acc_eval, acc_pre, l1_change, l2_change, linf_change, task_num):
+                    wandb_info = {
+                        'loss': float(loss),
+                        'accuracy': float(accuracy),
+                        'rank': float(jnp.mean(rank)),
+                        'effective_rank': float(jnp.mean(eff_rank)),
+                        'approx_rank': float(jnp.mean(approx_rank)),
+                        'dead_neurons': float(jnp.mean(dead_neurons)),
+                        'accuracy_eval': float(acc_eval),
+                        'accuracy_pre': float(acc_pre),
+                        'l1_norm_change': float(l1_change),
+                        'l2_norm_change': float(l2_change),
+                        'linf_norm_change': float(linf_change),
+                        'task': int(task_num)
+                    }
+                    wandb.log(wandb_info)
+                
+                jax.debug.callback(log_to_wandb, 
+                                 jnp.mean(res_info['loss']), res_info['accuracy'], 
+                                 res_info['rank'], res_info['effective_rank'], 
+                                 res_info['approx_rank'], res_info['dead_neurons'],
+                                 res_info['accuracy_eval'], res_info['accuracy_pre'],
+                                 res_info['l1_norm_change'], res_info['l2_norm_change'], 
+                                 res_info['linf_norm_change'], task)
 
             #compute hessian at the end of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
@@ -364,8 +447,6 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
-
-
 
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)
