@@ -40,6 +40,12 @@ class PermutedMnistHyperparams(Hyperparams):
     compute_hessian_size: int = 2000  # Number of samples to use for computing the hessian
     compute_hessian_interval: int = 1
 
+    # wandb
+    wandb: bool = True
+    wandb_project: str = 'permuted_mnist'
+    wandb_group: str = 'test'
+    wandb_entity: str = 'rl-power'
+
     def process_args(self) -> None:
         self.lr = jnp.array(self.lr)
         self.er_lr = jnp.array(self.er_lr)

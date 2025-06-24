@@ -18,6 +18,24 @@ from utils.hessian_computation import get_hvp_fn
 from utils.lanczos import lanczos_alg
 from utils.density import tridiag_to_density
 
+def compute_param_norms(params):
+    """Compute L1, L2, and L∞ norms of parameters"""
+    # Flatten all parameters into a single array
+    flat_params = jax.tree_util.tree_leaves(params)
+    flat_params = jnp.concatenate([p.flatten() for p in flat_params])
+    
+    l1_norm = jnp.sum(jnp.abs(flat_params))
+    l2_norm = jnp.sqrt(jnp.sum(flat_params ** 2))
+    linf_norm = jnp.max(jnp.abs(flat_params))
+    
+    return l1_norm, l2_norm, linf_norm
+
+def compute_param_change_norms(old_params, new_params):
+    """Compute L1, L2, and L∞ norms of parameter changes"""
+    # Compute parameter differences
+    param_diff = jax.tree_util.tree_map(lambda x, y: x - y, new_params, old_params)
+    return compute_param_norms(param_diff)
+
 # Mapping of activation names to functions
 ACTIVATIONS = {
     'linear': lambda x: x,
@@ -188,14 +206,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 return runner_state, (loss, accuracy)
 
             x, y, train_state, train_previous, rng = runner_state
-            # x_all, y_all, train_state, rng = runner_state
-            # rng, _rng = jax.random.split(rng)
-            # pixel_permutation = jax.random.permutation(rng, input_size)
-            # x_all = x_all[:, pixel_permutation]
-            # # Shuffle the data for the current task
-            # rng, _rng = jax.random.split(rng)
-            # data_permutation = jax.random.permutation(rng, examples_per_task)
-            # x, y = x_all[data_permutation], y_all[data_permutation]
+            old_params = train_state.params.copy()
             update_erbatch_runner_state = (x, y, train_state, rng)
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(update_erbatch, update_erbatch_runner_state, 
                                         jnp.arange(0, examples_per_task, args.mini_batch_size * args.er_batch), 
@@ -217,8 +228,10 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             pred_labels = jnp.argmax(output, axis=-1)
             accuracy_pre = jnp.mean(pred_labels == y_pretrain)
 
+            l1_norm_change, l2_norm_change, linf_norm_change = compute_param_change_norms(old_params, train_state.params)
+
             if args.debug:
-                jax.debug.print("Task {t}: Train Accuracy {acc}, Eval Accuracy = {acc_eval}, Pretrain Accuracy = {acc_pretrain}", t=task, acc=accuracy, acc_eval=accuracy_eval, acc_pretrain=accuracy_pre)
+                jax.debug.print("Task {t}: Train Accuracy {acc}, Eval Accuracy = {acc_eval}, acc on previous train set = {acc_pretrain}, L1 norm change = {l1_norm_change}, L2 norm change = {l2_norm_change}, Linf norm change = {linf_norm_change}", t=task, acc=accuracy, acc_eval=accuracy_eval, acc_pretrain=accuracy_pre, l1_norm_change=l1_norm_change, l2_norm_change=l2_norm_change, linf_norm_change=linf_norm_change)
                 jax.debug.print(
                     "Rank: {r}, EffRank: {er}, ApproxRank: {ar}, DeadNeurons: {dn}",
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
@@ -232,13 +245,21 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 'approx_rank': approx_rank,
                 'dead_neurons': dead_neurons,
                 'accuracy_eval': accuracy_eval,
-                'accuracy_pre': accuracy_pre
+                'accuracy_pre': accuracy_pre,
+                'l1_norm_change': l1_norm_change,
+                'l2_norm_change': l2_norm_change,
+                'linf_norm_change': linf_norm_change
             }
                 
             return runner_state, res_info
 
         loss_list, acc_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], []
         update_task = jax.jit(update_task)
+        if args.wandb:
+            import wandb
+            name = f"{args.agent}_{args.activation}_{args.lr}_{args.er_lr}_{args.er_batch}_{args.er_step}_{args.num_features}_{args.num_hidden_layers}_{args.num_tasks}_{args.mini_batch_size}_{args.er_batch}_{args.er_step}"
+            wandb.init(project=args.wandb_project, name=name, entity=args.wandb_entity, group=args.wandb_group)
+            wandb.config.update(args)
         for task in range(num_tasks):
             eval_size = args.eval_size
             train_size = examples_per_task - eval_size
@@ -286,8 +307,6 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True)
 
-
-
             runner_state = (
                 x_train,
                 y_train,
@@ -300,7 +319,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             eff_rank_list.append(res_info['effective_rank'])
             approx_rank_list.append(res_info['approx_rank'])
             dead_neurons_list.append(res_info['dead_neurons'])
-
+            
+            if args.wandb:
+                wandb.log(res_info)
 
             #compute hessian at the end of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
@@ -330,8 +351,6 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
-
-
 
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)
