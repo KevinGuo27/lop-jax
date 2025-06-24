@@ -35,6 +35,7 @@ class PermutedMnistHyperparams(Hyperparams):
 
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?
+    evaluate_previous: bool = False  # Do we evaluate on previous tasks?
     eval_size: int = 2000
     compute_hessian: bool = False
     compute_hessian_size: int = 100  # Number of samples to use for computing the hessian

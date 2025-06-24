@@ -16,7 +16,7 @@ import orbax.checkpoint
 from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.hessian_computation import get_hvp_fn
 from utils.lanczos import lanczos_alg
-from utils.density import tridiag_to_density
+from utils.density import tridiag_to_density, tridiag_to_density_and_erank
 from cbp import ContinualBackpropTrainState
 
 # Mapping of activation names to functions
@@ -305,7 +305,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     order=100,
                     rng_key=rng
                 )
-                density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                # density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+                density_test, grids_test, effective_rank = tridiag_to_density_and_erank([tridiag], grid_len=10000, sigma_squared=1e-5)
+                jax.debug.print("Effective Rank at init: {er}", er=effective_rank)
 
                 # Hessian computation on train set
                 x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
