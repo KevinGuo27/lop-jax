@@ -187,7 +187,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 runner_state = (x, y, train_state, rng)
                 return runner_state, (loss, accuracy)
 
-            x, y, train_state, rng = runner_state
+            x, y, train_state, train_previous, rng = runner_state
             # x_all, y_all, train_state, rng = runner_state
             # rng, _rng = jax.random.split(rng)
             # pixel_permutation = jax.random.permutation(rng, input_size)
@@ -210,8 +210,15 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features)
             pred_labels = jnp.argmax(output, axis=-1)
             accuracy_eval = jnp.mean(pred_labels == y_eval)
+
+            # Evaluate the model on the previous train set
+            x_pretrain, y_pretrain = train_previous
+            output, features = agent.predict(train_state.params, x_pretrain)
+            pred_labels = jnp.argmax(output, axis=-1)
+            accuracy_pre = jnp.mean(pred_labels == y_pretrain)
+
             if args.debug:
-                jax.debug.print("Task {t}: Train Accuracy {acc}, Eval Accuracy = {acc_eval}", t=task, acc=accuracy, acc_eval=accuracy_eval)
+                jax.debug.print("Task {t}: Train Accuracy {acc}, Eval Accuracy = {acc_eval}, Pretrain Accuracy = {acc_pretrain}", t=task, acc=accuracy, acc_eval=accuracy_eval, acc_pretrain=accuracy_pre)
                 jax.debug.print(
                     "Rank: {r}, EffRank: {er}, ApproxRank: {ar}, DeadNeurons: {dn}",
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
@@ -223,7 +230,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 'rank': rank,
                 'effective_rank': effective_rank,
                 'approx_rank': approx_rank,
-                'dead_neurons': dead_neurons
+                'dead_neurons': dead_neurons,
+                'accuracy_eval': accuracy_eval,
+                'accuracy_pre': accuracy_pre
             }
                 
             return runner_state, res_info
@@ -231,6 +240,10 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         loss_list, acc_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], []
         update_task = jax.jit(update_task)
         for task in range(num_tasks):
+            eval_size = args.eval_size
+            train_size = examples_per_task - eval_size
+            # Record the previous train set
+            train_previous = (x_all[train_size:], y_all[train_size:])
             # permuted dataset
             rng, _rng = jax.random.split(rng)
             pixel_permutation = jax.random.permutation(rng, input_size)
@@ -241,8 +254,6 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             x_shuffled, y_shuffled = x_all[data_permutation], y_all[data_permutation]
 
             # Split into train and eval sets
-            eval_size = args.eval_size
-            train_size = examples_per_task - eval_size
             x_train, y_train = x_shuffled[:train_size], y_shuffled[:train_size]
             x_eval, y_eval = x_shuffled[train_size:], y_shuffled[train_size:]
 
@@ -280,7 +291,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             runner_state = (
                 x_train,
                 y_train,
-                train_state, 
+                train_state,
+                train_previous, 
                 rng)
             runner_state, res_info = update_task(runner_state, task)
             x_train, y_train, train_state, rng = runner_state
