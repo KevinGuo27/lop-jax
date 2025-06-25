@@ -37,7 +37,7 @@ def env_step(runner_state, unused, agent: PPOAgent, env, env_params, args: NonSt
     rng, _rng = jax.random.split(rng)
     value, action, log_prob, activations = agent.act(_rng, train_state.params, last_obs)
 
-    if args.cont_backprop:
+    if args.cont_backprop and not args.compute_hessian_init and not args.compute_hessian_end:
         rng, _rng = jax.random.split(rng)
         train_state = train_state.update_and_reinit(_rng,
                                                     activations,
