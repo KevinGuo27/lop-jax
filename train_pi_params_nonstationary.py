@@ -20,11 +20,40 @@ from rlopt.envs import load_nonstationary_env, load_env, is_continuous, nonstati
 from rlopt.file_system import get_results_path
 from rlopt.models import ActorCritic
 from rlopt.utils import adam_with_param_counts
+from utils.hessian_computation import get_hvp_fn
+from utils.lanczos import lanczos_alg
+from utils.file_system import plot_hessian_spectrum
+from utils.density import tridiag_to_density, tridiag_to_density_and_erank
 
 
 def filter_period_first_dim(x, n: int):
     if isinstance(x, jnp.ndarray) or isinstance(x, np.ndarray):
         return x[::n]
+
+def env_step(runner_state, unused, agent: PPOAgent, env, env_params, args: NonStationaryPolicyHyperparams):
+    train_state, env_state, last_obs, rng = runner_state
+
+    # SELECT ACTION
+    rng, _rng = jax.random.split(rng)
+    value, action, log_prob, activations = agent.act(_rng, train_state.params, last_obs)
+
+    if args.cont_backprop:
+        rng, _rng = jax.random.split(rng)
+        train_state = train_state.update_and_reinit(_rng,
+                                                    activations,
+                                                    replacement_rate=args.replacement_rate,
+                                                    decay_rate=args.decay_rate,
+                                                    maturity_threshold=args.maturity_threshold)
+
+    # STEP ENV
+    rng, _rng = jax.random.split(rng)
+    rng_step = jax.random.split(_rng, args.num_envs)
+    obsv, env_state, reward, done, info = env.step(rng_step, env_state, action, env_params)
+    transition = Transition(
+        done, action, value, reward, log_prob, last_obs, info
+    )
+    runner_state = (train_state, env_state, obsv, rng)
+    return runner_state, transition
 
 
 def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
@@ -61,6 +90,8 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
         agent = PPOAgent(network, args)
     else:
         agent = ActorCriticAgent(network, args)
+    
+    _env_step = partial(env_step, agent=agent, env=env, env_params=env_params, args=args)
 
     def linear_schedule(count):
         frac = (
@@ -76,6 +107,44 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
 
     steps_filter = partial(filter_period_first_dim, n=args.steps_log_freq)
     updates_filter = partial(filter_period_first_dim, n=args.updates_log_freq)
+
+    def hessian_computation(runner_state, epoch, at_init):
+        train_state, env_state, last_obs, rng = runner_state
+        reset_rng = jax.random.split(rng, args.num_envs)
+        eval_obsv, eval_env_state = env.reset(reset_rng, env_params)
+
+        eval_runner_state = (
+            train_state,
+            eval_env_state,
+            eval_obsv,
+            rng,
+        )
+
+        # COLLECT EVAL TRAJECTORIES
+        eval_runner_state, eval_traj_batch = jax.lax.scan(
+            _env_step, eval_runner_state, None, env_params.max_steps_in_episode
+        )
+
+        train_state, env_state, last_obs, rng = eval_runner_state
+        _, last_val, _ = network.apply(train_state.params, last_obs)
+
+        advantages, targets = agent.target(eval_traj_batch, last_val)
+
+        def hessian_loss(params, traj_batch, advantages, targets):
+            total_loss, _ = agent.loss(params, traj_batch, advantages, targets)
+            return total_loss
+                        
+        hvp_fn, unravel, num_params = get_hvp_fn(hessian_loss, train_state.params, (eval_traj_batch, advantages, targets))
+        hvp_cl = lambda v: hvp_fn(train_state.params, v)
+        rng, _rng = jax.random.split(rng)
+        tridiag, lanczos_vecs = lanczos_alg(
+            hvp_cl,
+            num_params,
+            order=100,
+            rng_key=rng
+        )   
+        density, grids = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
+        jax.debug.callback(plot_hessian_spectrum, grids, density, epoch, args.study_name, is_initialization=at_init)
 
     def train(rng):
         if args.no_anneal_lr:
@@ -101,36 +170,11 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
         reset_rng = jax.random.split(_rng, args.num_envs)
         obsv, env_state = env.reset(reset_rng, env_params)
 
-        def _epoch_step(runner_state, unused):
+        def _epoch_step(runner_state, epoch):
 
             # TRAIN LOOP
             def _update_step(runner_state, unused):
                 # COLLECT TRAJECTORIES
-                def _env_step(runner_state, unused):
-                    train_state, env_state, last_obs, rng = runner_state
-
-                    # SELECT ACTION
-                    rng, _rng = jax.random.split(rng)
-                    value, action, log_prob, activations = agent.act(_rng, train_state.params, last_obs)
-
-                    if args.cont_backprop:
-                        rng, _rng = jax.random.split(rng)
-                        train_state = train_state.update_and_reinit(_rng,
-                                                                    activations,
-                                                                    replacement_rate=args.replacement_rate,
-                                                                    decay_rate=args.decay_rate,
-                                                                    maturity_threshold=args.maturity_threshold)
-
-                    # STEP ENV
-                    rng, _rng = jax.random.split(rng)
-                    rng_step = jax.random.split(_rng, args.num_envs)
-                    obsv, env_state, reward, done, info = env.step(rng_step, env_state, action, env_params)
-                    transition = Transition(
-                        done, action, value, reward, log_prob, last_obs, info
-                    )
-                    runner_state = (train_state, env_state, obsv, rng)
-                    return runner_state, transition
-
                 runner_state, traj_batch = jax.lax.scan(
                     _env_step, runner_state, None, args.num_steps
                 )
@@ -218,20 +262,36 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
                 _update_step, runner_state, None, num_updates // num_epochs
             )
             metric = jax.tree.map(updates_filter, metric)
-
+            
             return runner_state, (metric, runner_state)
 
         rng, _rng = jax.random.split(rng)
         init_runner_state = (train_state, env_state, obsv, _rng)
-        final_runner_state, (metric, all_runner_states) = jax.lax.scan(
-            _epoch_step, init_runner_state, None, num_epochs
-        )
-
+        runner_state = init_runner_state
+        metrics_list = []
+        states_list = []
+        _epoch_step = jax.jit(_epoch_step)
+        for epoch in range(num_epochs):
+            if args.compute_hessian_init:
+                hessian_computation(runner_state, epoch, at_init=True)
+            runner_state, (metric, runner_state) = _epoch_step(runner_state, epoch)
+            if args.compute_hessian_end:
+                hessian_computation(runner_state, epoch, at_init=False)
+            metrics_list.append(metric)
+            states_list.append(runner_state)
+        metric = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *metrics_list)
+        all_runner_states = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *states_list)
+        final_runner_state = runner_state
         final_train_state = final_runner_state[0]
+        # final_runner_state, (metric, all_runner_states) = jax.lax.scan(
+        #     _epoch_step, init_runner_state, jnp.arange(num_epochs), num_epochs
+        # )
+
+        # final_train_state = final_runner_state[0]
         runner_states = {
             'initial_runner_state': init_runner_state,
             'intermediate_runner_states': all_runner_states,
-            'final_runner_state': final_runner_state
+            'final_runner_state': final_runner_state,
         }
 
         return initial_train_state, final_train_state, metric, runner_states
@@ -255,13 +315,13 @@ def run_train(passed_in_args: Union[dict, NonStationaryPolicyHyperparams] = None
     rng, make_train_rng = jax.random.split(rng)
 
     train_fn = make_train(make_train_rng, args)
-    jitted_train_fn = jax.jit(train_fn)
+    # jitted_train_fn = jax.jit(train_fn)
 
     # now we vmap rng over n_param_sets
     rng, train_rng = jax.random.split(rng)
     train_rngs = jax.random.split(train_rng, args.n_param_sets)
 
-    vmapped_train_fn = jax.vmap(jitted_train_fn)
+    vmapped_train_fn = jax.vmap(train_fn)
 
     init_train_states, final_train_states, metrics, runner_states = vmapped_train_fn(train_rngs)
 

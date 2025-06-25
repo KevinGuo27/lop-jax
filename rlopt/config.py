@@ -45,6 +45,12 @@ class PolicyHyperparams(Hyperparams):
     adv_lambda: float = 0.95
     update_epochs: int = 4
 
+    # Hessian Computation
+    compute_hessian_init: bool = False
+    compute_hessian_end: bool = False
+    compute_hessian_size: int = 2000  # Number of samples to use for computing the hessian
+    compute_hessian_interval: int = 1
+
     total_steps: int = int(1e7)
     n_param_sets: int = 2
     steps_log_freq: int = 128
