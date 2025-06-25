@@ -283,11 +283,6 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
         all_runner_states = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *states_list)
         final_runner_state = runner_state
         final_train_state = final_runner_state[0]
-        # final_runner_state, (metric, all_runner_states) = jax.lax.scan(
-        #     _epoch_step, init_runner_state, jnp.arange(num_epochs), num_epochs
-        # )
-
-        # final_train_state = final_runner_state[0]
         runner_states = {
             'initial_runner_state': init_runner_state,
             'intermediate_runner_states': all_runner_states,
