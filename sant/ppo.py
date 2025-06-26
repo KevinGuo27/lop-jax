@@ -101,12 +101,14 @@ def make_train(config):
         if config["ANNEAL_LR"]:
             tx = optax.chain(
                 optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
-                optax.adam(learning_rate=linear_schedule, eps=1e-5, weight_decay=config["WEIGHT_DECAY"]),
+                optax.add_decayed_weights(config["WEIGHT_DECAY"]),
+                optax.adam(learning_rate=linear_schedule, eps=1e-5),
             )
         else:
             tx = optax.chain(
                 optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
-                optax.adam(config["LR"], eps=1e-5, weight_decay=config["WEIGHT_DECAY"]),
+                optax.add_decayed_weights(config["WEIGHT_DECAY"]),
+                optax.adam(config["LR"], eps=1e-5),
             )
             
         # Create new train_state with provided or initialized parameters
