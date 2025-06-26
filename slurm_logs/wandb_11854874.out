@@ -1242,3 +1242,39 @@ Task 609: Train Accuracy 0.9555333256721497, Eval Accuracy = 0.9790000319480896,
 Rank: [1000 1000 1000], EffRank: [232.55211 383.71448 352.58026], ApproxRank: [213 333 284], DeadNeurons: [112   0   0]
 Task 610: Train Accuracy 0.9559500217437744, Eval Accuracy = 0.9745000600814819, acc on previous train set = 0.9510000348091125, L1 norm change = 4694.16796875, L2 norm change = 7.776625633239746, Linf norm change = 0.16057901084423065
 Rank: [ 999 1000 1000], EffRank: [238.67969 384.67206 356.40955], ApproxRank: [220 334 291], DeadNeurons: [107   0   0]
+Task 611: Train Accuracy 0.9552000164985657, Eval Accuracy = 0.9720000624656677, acc on previous train set = 0.955500066280365, L1 norm change = 4676.27001953125, L2 norm change = 7.767577171325684, Linf norm change = 0.158491849899292
+Rank: [ 999 1000 1000], EffRank: [239.88765 384.72763 354.0733 ], ApproxRank: [219 334 287], DeadNeurons: [110   0   0]
+Task 612: Train Accuracy 0.956766664981842, Eval Accuracy = 0.9755000472068787, acc on previous train set = 0.9610000252723694, L1 norm change = 4725.212890625, L2 norm change = 7.796215057373047, Linf norm change = 0.16247333586215973
+Rank: [1000 1000 1000], EffRank: [238.8278  380.96954 349.8528 ], ApproxRank: [218 327 280], DeadNeurons: [96  0  0]
+Task 613: Train Accuracy 0.9557000398635864, Eval Accuracy = 0.9825000762939453, acc on previous train set = 0.9585000276565552, L1 norm change = 4730.1962890625, L2 norm change = 7.824615478515625, Linf norm change = 0.1616504043340683
+Rank: [ 999 1000 1000], EffRank: [237.4281  382.17038 352.71143], ApproxRank: [216 328 284], DeadNeurons: [104   0   0]
+Task 614: Train Accuracy 0.9547500014305115, Eval Accuracy = 0.9740000367164612, acc on previous train set = 0.9310000538825989, L1 norm change = 4679.13232421875, L2 norm change = 7.862972736358643, Linf norm change = 0.1926923245191574
+Rank: [1000 1000 1000], EffRank: [230.1557  383.75986 351.6843 ], ApproxRank: [208 332 283], DeadNeurons: [117   0   0]
+Task 615: Train Accuracy 0.9549999833106995, Eval Accuracy = 0.9745000600814819, acc on previous train set = 0.9485000371932983, L1 norm change = 4642.81298828125, L2 norm change = 7.8047966957092285, Linf norm change = 0.17008402943611145
+Rank: [1000 1000 1000], EffRank: [223.52495 387.31787 358.94296], ApproxRank: [207 338 295], DeadNeurons: [156   0   0]
+Task 616: Train Accuracy 0.9560166597366333, Eval Accuracy = 0.9795000553131104, acc on previous train set = 0.955500066280365, L1 norm change = 4603.91552734375, L2 norm change = 7.755803108215332, Linf norm change = 0.189841628074646
+Rank: [ 999 1000 1000], EffRank: [228.202   382.62845 350.39908], ApproxRank: [210 332 282], DeadNeurons: [102   0   0]
+Task 617: Train Accuracy 0.9566666483879089, Eval Accuracy = 0.9815000295639038, acc on previous train set = 0.9475000500679016, L1 norm change = 4595.435546875, L2 norm change = 7.700672149658203, Linf norm change = 0.15743553638458252
+Rank: [1000 1000 1000], EffRank: [232.38095 383.35822 354.2216 ], ApproxRank: [213 331 287], DeadNeurons: [106   0   0]
+Task 618: Train Accuracy 0.9571000337600708, Eval Accuracy = 0.9765000343322754, acc on previous train set = 0.9635000228881836, L1 norm change = 4565.158203125, L2 norm change = 7.6329779624938965, Linf norm change = 0.16599756479263306
+Rank: [ 999 1000 1000], EffRank: [240.6235  384.0308  352.92273], ApproxRank: [216 333 285], DeadNeurons: [88  0  0]
+Task 619: Train Accuracy 0.9559500217437744, Eval Accuracy = 0.9770000576972961, acc on previous train set = 0.9450000524520874, L1 norm change = 4733.779296875, L2 norm change = 7.791109085083008, Linf norm change = 0.17669832706451416
+Rank: [ 999 1000 1000], EffRank: [238.33122 380.87256 352.3194 ], ApproxRank: [221 328 284], DeadNeurons: [128   0   0]
+Task 620: Train Accuracy 0.955049991607666, Eval Accuracy = 0.9845000505447388, acc on previous train set = 0.9660000205039978, L1 norm change = 4752.68994140625, L2 norm change = 7.824894905090332, Linf norm change = 0.15345662832260132
+Rank: [ 999 1000 1000], EffRank: [232.78021 379.73047 350.14337], ApproxRank: [213 325 280], DeadNeurons: [103   0   0]
+Task 621: Train Accuracy 0.9562000036239624, Eval Accuracy = 0.9750000238418579, acc on previous train set = 0.9640000462532043, L1 norm change = 4670.79248046875, L2 norm change = 7.817881107330322, Linf norm change = 0.16471171379089355
+Rank: [1000 1000 1000], EffRank: [235.33162 383.21365 351.81476], ApproxRank: [216 331 282], DeadNeurons: [94  0  0]
+Task 622: Train Accuracy 0.9548333287239075, Eval Accuracy = 0.9725000262260437, acc on previous train set = 0.9530000686645508, L1 norm change = 4733.9677734375, L2 norm change = 7.885885715484619, Linf norm change = 0.18163561820983887
+Rank: [1000 1000 1000], EffRank: [236.10606 384.02142 353.50177], ApproxRank: [216 333 286], DeadNeurons: [98  0  0]
+Task 623: Train Accuracy 0.954716682434082, Eval Accuracy = 0.9780000448226929, acc on previous train set = 0.9605000615119934, L1 norm change = 4706.2802734375, L2 norm change = 7.8161301612854, Linf norm change = 0.15021897852420807
+Rank: [1000 1000 1000], EffRank: [233.17438 383.1331  353.84814], ApproxRank: [215 332 287], DeadNeurons: [126   0   0]
+Task 624: Train Accuracy 0.9553999900817871, Eval Accuracy = 0.9755000472068787, acc on previous train set = 0.971000075340271, L1 norm change = 4637.98193359375, L2 norm change = 7.755086898803711, Linf norm change = 0.1772967129945755
+Rank: [ 999 1000 1000], EffRank: [228.18578 384.05093 358.72308], ApproxRank: [208 332 294], DeadNeurons: [111   0   0]
+Task 625: Train Accuracy 0.9563666582107544, Eval Accuracy = 0.9795000553131104, acc on previous train set = 0.9470000267028809, L1 norm change = 4603.80859375, L2 norm change = 7.766005039215088, Linf norm change = 0.1797047257423401
+Rank: [1000 1000 1000], EffRank: [228.15987 384.9247  358.43497], ApproxRank: [210 334 293], DeadNeurons: [111   0   0]
+Task 626: Train Accuracy 0.9567166566848755, Eval Accuracy = 0.9780000448226929, acc on previous train set = 0.9505000710487366, L1 norm change = 4570.8525390625, L2 norm change = 7.70432186126709, Linf norm change = 0.1639147698879242
+Rank: [1000 1000 1000], EffRank: [230.60686 384.98236 357.06207], ApproxRank: [211 334 291], DeadNeurons: [103   0   0]
+Task 627: Train Accuracy 0.9561333656311035, Eval Accuracy = 0.9805000424385071, acc on previous train set = 0.9325000643730164, L1 norm change = 4693.41650390625, L2 norm change = 7.775070667266846, Linf norm change = 0.17577899992465973
+Rank: [ 999 1000 1000], EffRank: [238.85503 384.37997 354.5998 ], ApproxRank: [215 335 288], DeadNeurons: [84  0  0]
+Task 628: Train Accuracy 0.9569833278656006, Eval Accuracy = 0.9800000190734863, acc on previous train set = 0.9665000438690186, L1 norm change = 4689.802734375, L2 norm change = 7.758388519287109, Linf norm change = 0.19022294878959656
+Rank: [ 999 1000 1000], EffRank: [242.418   383.5972  352.94913], ApproxRank: [221 332 284], DeadNeurons: [76  0  0]

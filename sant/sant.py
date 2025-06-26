@@ -28,7 +28,23 @@ def main(args):
         "ENV_FRICTION": None,
     }
 
-    config.update(vars(args))
+    config["TOTAL_TIMESTEPS"] = args.timesteps
+    config["LR"] = args.lr
+    config["NUM_ENVS"] = args.num_envs
+    config["NUM_STEPS"] = args.num_steps
+    config["NUM_MINIBATCHES"] = args.num_minibatches
+    config["UPDATE_EPOCHS"] = args.num_updates
+    config["GAMMA"] = args.gamma
+    config["GAE_LAMBDA"] = args.gae_lambda
+    config["CLIP_EPS"] = args.clip_eps
+    config["ENT_COEF"] = args.entropy_coef
+    config["VF_COEF"] = args.vf_coef
+    config["MAX_GRAD_NORM"] = args.max_grad_norm
+    config["ANNEAL_LR"] = args.anneal_lr
+    config["NORMALIZE_ENV"] = args.normalize_env
+    config["DEBUG"] = args.debug
+    config["ACTIVATION"] = args.activation
+    config["ENV_NAME"] = args.env_name
 
     with open("sant/frictions", 'rb+') as f:
         frictions = pickle.load(f)
@@ -66,6 +82,7 @@ def main(args):
         plt.ylabel("Return")
         # plt.show()
         plt.savefig(f"sant/data/friction_{i}_return_vs_updates.png")
+        plt.close()
 
 
 
@@ -90,7 +107,6 @@ if __name__ == "__main__":
     parser.add_argument("--debug", type=bool, default=False)    
     parser.add_argument("--activation", type=str, default="ReLU")
     parser.add_argument("--env_name", type=str, default="ant")
-    parser.add_argument("--env_friction", type=float, default=None)
     parser.add_argument("--seed", type=int, default=30)
     parser.add_argument("--num_seeds", type=int, default=1)
 
