@@ -26,6 +26,7 @@ def main(args):
         "NORMALIZE_ENV": True,
         "DEBUG": False,
         "ENV_FRICTION": None,
+        "WEIGHT_DECAY": 0.0,
     }
 
     config["TOTAL_TIMESTEPS"] = args.timesteps
@@ -45,6 +46,7 @@ def main(args):
     config["DEBUG"] = args.debug
     config["ACTIVATION"] = args.activation
     config["ENV_NAME"] = args.env_name
+    config["WEIGHT_DECAY"] = args.weight_decay
 
     with open("sant/frictions", 'rb+') as f:
         frictions = pickle.load(f)
@@ -54,9 +56,9 @@ def main(args):
     rng = jax.random.PRNGKey(args.seed)
     rngs = jax.random.split(rng, args.num_seeds)
 
-    for i in range(config["task_number"]):
+    for i in range(args.task_number):
         friction = frictions[args.seed][i]
-        print(f"Task {i}/{config['task_number']}, Friction: {friction}")
+        print(f"Task {i}/{args.task_number}, Friction: {friction}")
 
         config["ENV_FRICTION"] = friction
 
@@ -89,7 +91,7 @@ def main(args):
 if __name__ == "__main__":
     os.makedirs("sant/data", exist_ok=True)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task_number", type=int, default=4)
+    parser.add_argument("--task_number", type=int, default=5)
     parser.add_argument("--timesteps", type=int, default=2e6)
     parser.add_argument("--lr", type=float, default=1e-4)   
     parser.add_argument("--num_envs", type=int, default=1)
@@ -109,6 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("--env_name", type=str, default="ant")
     parser.add_argument("--seed", type=int, default=30)
     parser.add_argument("--num_seeds", type=int, default=1)
+    parser.add_argument("--weight_decay", type=float, default=0.0)
 
     args = parser.parse_args()
     main(args)
