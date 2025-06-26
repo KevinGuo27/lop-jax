@@ -1,0 +1,11 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 11828031
+##  Job Name : slurm.sh
+##  Nodelist : gpu2006
+##      CPUs : 1
+##  Mem/Node : 65536 MB
+## Directory : /oscar/home/nhe6/Documents/rl-opt
+##   Job Started : Tue Jun 24 03:01:28 PM EDT 2025
+###############################################################################
+pyenv-virtualenv: virtualenv `/users/nhe6/.pyenv/versions/3.11.0/envs/jaxopt' is already activated
+slurmstepd: error: *** JOB 11828031 ON gpu2006 CANCELLED AT 2025-06-24T15:01:38 ***

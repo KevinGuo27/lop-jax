@@ -15,7 +15,7 @@ class PermutedMnistHyperparams(Hyperparams):
     agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2_er'
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
-    lr: list[float] = [0.01]
+    lr: list[float] = [0.003]
     optimizer: Literal['adam', 'sgd'] = 'sgd'
     weight_decay: float = 0.001 # Do we use L2 regularization?
     num_features: int = 1000  # Number of input features

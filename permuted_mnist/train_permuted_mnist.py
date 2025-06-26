@@ -38,6 +38,48 @@ def compute_param_change_norms(old_params, new_params):
     param_diff = jax.tree_util.tree_map(lambda x, y: x - y, new_params, old_params)
     return compute_param_norms(param_diff)
 
+def evaluate_on_previous_tasks(agent, params, x_train, y_train, task_permutations, eval_size=1000):
+    """
+    Evaluate the network on previous tasks using their stored permutations.
+    
+    Args:
+        agent: The EffectiveRankAgent
+        params: Current network parameters
+        x_test: Test data (original, unpermuted)
+        y_test: Test labels
+        task_permutations: List of permutations used in previous tasks
+        eval_size: Number of samples to use for each evaluation
+    
+    Returns:
+        dict with 'mean_accuracy', 'std_accuracy', and 'all_accuracies'
+    """
+    # Limit evaluation data size
+    x_eval = x_train[:eval_size]
+    y_eval = y_train[:eval_size]
+    
+    accuracies = []
+    
+    for permutation in task_permutations:
+        # Apply the stored permutation to test data
+        x_permuted = x_eval[:, permutation]
+        
+        # Evaluate on this permuted data
+        output, _ = agent.predict(params, x_permuted)
+        pred_labels = jnp.argmax(output, axis=-1)
+        accuracy = jnp.mean(pred_labels == y_eval)
+        accuracies.append(accuracy)
+    
+    accuracies = jnp.array(accuracies)
+    mean_accuracy = jnp.mean(accuracies)
+    std_accuracy = jnp.std(accuracies)
+    
+    return {
+        'mean_accuracy': mean_accuracy,
+        'std_accuracy': std_accuracy,
+        'all_accuracies': accuracies,
+        'num_tasks_evaluated': len(task_permutations)
+    }
+
 # Mapping of activation names to functions
 ACTIVATIONS = {
     'linear': lambda x: x,
@@ -324,6 +366,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             return runner_state, res_info
 
         loss_list, acc_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], []
+        # Storage for task permutations and evaluation results
+        task_permutations = []
+        previous_task_eval_results = {}
         update_task = jax.jit(update_task)
         if args.wandb:
             import wandb
@@ -338,6 +383,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             # permuted dataset
             rng, _rng = jax.random.split(rng)
             pixel_permutation = jax.random.permutation(rng, input_size)
+            # Store the permutation for this task
+            task_permutations.append(pixel_permutation)
             x_all = x_all[:, pixel_permutation]
             # Shuffle the data for the current task
             rng, _rng = jax.random.split(rng)
@@ -448,6 +495,43 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
 
+            # Evaluate on previous 100 tasks at tasks 300, 400, and 500
+            if task in [300, 400, 500] and task >= 100:
+                # Get the previous 100 task permutations
+                start_idx = max(0, task - 100)
+                prev_permutations = task_permutations[start_idx:task]
+                
+                if len(prev_permutations) > 0:
+                    eval_results = evaluate_on_previous_tasks(
+                        agent, train_state.params, x_all, y_all, 
+                        prev_permutations, eval_size=train_size
+                    )
+                    previous_task_eval_results[f'task_{task}_prev_eval'] = eval_results
+                    
+                    # Print results for debugging
+                    jax.debug.print(
+                        "Task {t}: Evaluated on {n} previous tasks, Mean Accuracy: {mean_acc:.4f}, Std: {std_acc:.4f}",
+                        t=task, n=eval_results['num_tasks_evaluated'], 
+                        mean_acc=eval_results['mean_accuracy'], std_acc=eval_results['std_accuracy']
+                    )
+                    
+                    # Log to wandb if enabled
+                    if args.wandb:
+                        def log_prev_task_eval(mean_acc, std_acc, num_tasks, task_num):
+                            wandb_info = {
+                                f'prev_task_eval_mean_acc_task_{task_num}': float(mean_acc),
+                                f'prev_task_eval_std_acc_task_{task_num}': float(std_acc),
+                                f'prev_task_eval_num_tasks_task_{task_num}': int(num_tasks),
+                                'task': int(task_num)
+                            }
+                            wandb.log(wandb_info)
+                        
+                        jax.debug.callback(log_prev_task_eval, 
+                                         eval_results['mean_accuracy'], 
+                                         eval_results['std_accuracy'],
+                                         eval_results['num_tasks_evaluated'], 
+                                         task)
+
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)
         eff_ranks         = jnp.stack(eff_rank_list)
@@ -459,7 +543,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             'effective_rank':  eff_ranks,
             'approx_rank':     approx_ranks,
             'dead_neurons':    dead_neurons,
-            'train_state':     final_train_state
+            'train_state':     final_train_state,
+            'previous_task_eval_results': previous_task_eval_results
         }
         return res_info
     return train
