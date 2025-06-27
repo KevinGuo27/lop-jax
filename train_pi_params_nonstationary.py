@@ -30,6 +30,23 @@ def filter_period_first_dim(x, n: int):
     if isinstance(x, jnp.ndarray) or isinstance(x, np.ndarray):
         return x[::n]
 
+def eval_env_step(runner_state, unused, agent: PPOAgent, env, env_params, args: NonStationaryPolicyHyperparams):
+    train_state, env_state, last_obs, rng = runner_state
+
+    # SELECT ACTION
+    rng, _rng = jax.random.split(rng)
+    value, action, log_prob, activations = agent.act(_rng, train_state.params, last_obs)
+
+    # STEP ENV
+    rng, _rng = jax.random.split(rng)
+    rng_step = jax.random.split(_rng, args.num_envs)
+    obsv, env_state, reward, done, info = env.step(rng_step, env_state, action, env_params)
+    transition = Transition(
+        done, action, value, reward, log_prob, last_obs, info
+    )
+    runner_state = (train_state, env_state, obsv, rng)
+    return runner_state, transition
+
 def env_step(runner_state, unused, agent: PPOAgent, env, env_params, args: NonStationaryPolicyHyperparams):
     train_state, env_state, last_obs, rng = runner_state
 
@@ -37,7 +54,7 @@ def env_step(runner_state, unused, agent: PPOAgent, env, env_params, args: NonSt
     rng, _rng = jax.random.split(rng)
     value, action, log_prob, activations = agent.act(_rng, train_state.params, last_obs)
 
-    if args.cont_backprop and not args.compute_hessian_init and not args.compute_hessian_end:
+    if args.cont_backprop:
         rng, _rng = jax.random.split(rng)
         train_state = train_state.update_and_reinit(_rng,
                                                     activations,
@@ -68,7 +85,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
     )
 
     rng, _rng = jax.random.split(rng)
-    env, env_params = load_nonstationary_env(rng, args.env, gamma=args.gamma)
+    env, env_params = load_nonstationary_env(rng, args.env, gamma=args.gamma, change_every=args.change_every)
 
     action_space = env.action_space(env_params)
     if isinstance(action_space, Box):
@@ -92,6 +109,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
         agent = ActorCriticAgent(network, args)
     
     _env_step = partial(env_step, agent=agent, env=env, env_params=env_params, args=args)
+    _eval_env_step = partial(eval_env_step, agent=agent, env=env, env_params=env_params, args=args)
 
     def linear_schedule(count):
         frac = (
@@ -122,7 +140,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
 
         # COLLECT EVAL TRAJECTORIES
         eval_runner_state, eval_traj_batch = jax.lax.scan(
-            _env_step, eval_runner_state, None, env_params.max_steps_in_episode
+            _eval_env_step, eval_runner_state, None, env_params.max_steps_in_episode
         )
 
         train_state, env_state, last_obs, rng = eval_runner_state
@@ -274,7 +292,7 @@ def make_train(rng: chex.PRNGKey, args: NonStationaryPolicyHyperparams):
         for epoch in range(num_epochs):
             if args.compute_hessian_init:
                 hessian_computation(runner_state, epoch, at_init=True)
-            runner_state, (metric, runner_state) = _epoch_step(runner_state, epoch)
+            runner_state, (metric, all_runner_state) = _epoch_step(runner_state, epoch)
             if args.compute_hessian_end:
                 hessian_computation(runner_state, epoch, at_init=False)
             metrics_list.append(metric)
