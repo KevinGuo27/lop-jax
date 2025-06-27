@@ -1,119 +1,127 @@
 import distrax
+import jax
 import flax.linen as nn
-from jax._src.nn.initializers import orthogonal, constant
 import jax.numpy as jnp
+from jax._src.nn.initializers import orthogonal, constant
+import numpy as np
+import functools
 
+class ScannedRNN(nn.Module):
+    hidden_size: int
+
+    @functools.partial(
+        nn.scan,
+        variable_broadcast="params",
+        in_axes=0,
+        out_axes=0,
+        split_rngs={"params": False},
+    )
+    @nn.compact
+    def __call__(self, carry, x):
+        """Applies the module."""
+        rnn_state = carry
+        ins, resets = x
+        rnn_state = jnp.where(
+            resets[:, np.newaxis],
+            self.initialize_carry(ins.shape[0], ins.shape[1]),
+            rnn_state,
+        )
+        new_rnn_state, y = nn.GRUCell(features=self.hidden_size)(rnn_state, ins)
+        return new_rnn_state, y
+
+    @staticmethod
+    def initialize_carry(batch_size, hidden_size):
+        # Use a dummy key since the default state init fn is just zeros.
+        return nn.GRUCell(features=hidden_size).initialize_carry(
+            jax.random.PRNGKey(0), (batch_size, hidden_size)
+        )
+
+class SimpleNN(nn.Module):
+    hidden_size: int
+
+    @nn.compact
+    def __call__(self, x):
+        out = nn.Dense(self.hidden_size, kernel_init=orthogonal(2), bias_init=constant(0.0))(
+            x
+        )
+        out = nn.relu(out)
+        out = nn.Dense(
+            self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+        )(out)
+        out = nn.relu(out)
+        out = nn.Dense(
+            self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+        )(out)
+        out = nn.relu(out)
+        out = nn.Dense(
+            self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+        )(out)
+        return out
 
 class Actor(nn.Module):
     action_dim: int
     continuous: bool = False
-    activation: str = 'relu'
-    h_dims: tuple = (256, 256)
+    hidden_size: int = 128
+    activation: str = "tanh"
 
     @nn.compact
     def __call__(self, x):
-        activation = nn.relu
-        if self.activation == 'tanh':
-            activation = nn.tanh
+        act_fn = nn.relu if self.activation == "relu" else nn.tanh
 
+        h1 = nn.Dense(2 * self.hidden_size, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0), name="a_0")(x)
+        h1 = act_fn(h1)
 
-        # TODO: lecun init?
-        out_1 = nn.Dense(self.h_dims[0], kernel_init=orthogonal(2), bias_init=constant(0.0),
-                         name='a_0')(
-            x
-        )
-        out_1 = activation(out_1)
-        activations = {'a_0': None, 'a_1': out_1}
+        activations = {
+            "a_0": None,
+            "a_1": h1,
+        }
 
-        out_i = out_1
-
-        for i in range(1, len(self.h_dims)):
-            out_i = nn.Dense(self.h_dims[i], kernel_init=orthogonal(2), bias_init=constant(0.0),
-                             name=f'a_{i}')(
-                out_i
-            )
-            out_i = activation(out_i)
-            activations[f'a_{i + 1}'] = out_i
-
-        out_i_plus_1 = nn.Dense(
-            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0), name=f'a_{len(self.h_dims)}'
-        )(out_i)
+        logits = nn.Dense(self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0), name="a_1")(h1)
 
         if self.continuous:
-            actor_logtstd = self.param("log_std", nn.initializers.zeros, (self.action_dim,))
-            activations['log_std'] = None
-            pi = distrax.MultivariateNormalDiag(out_i_plus_1, jnp.exp(actor_logtstd))
+            log_std = self.param("log_std", nn.initializers.zeros, (self.action_dim,))
+            activations["log_std"] = None
+            pi = distrax.MultivariateNormalDiag(logits, jnp.exp(log_std))
         else:
-            pi = distrax.Categorical(logits=out_i_plus_1)
+            pi = distrax.Categorical(logits=logits)
+
         return pi, activations
 
 
 class Critic(nn.Module):
-    h_dims: tuple = (256, 256)
-    activation: str = 'relu'
+    hidden_size: int = 128
+    activation: str = "tanh"
 
     @nn.compact
     def __call__(self, x):
-        activation = nn.relu
-        if self.activation == 'tanh':
-            activation = nn.tanh
+        act_fn = nn.relu if self.activation == "relu" else nn.tanh
+        h1 = nn.Dense(self.hidden_size, kernel_init=orthogonal(2.0), bias_init=constant(0.0), name="c_0")(x)
+        h1 = act_fn(h1)
 
-        # TODO: lecun init?
-        out_1 = nn.Dense(self.h_dims[0], kernel_init=orthogonal(2), bias_init=constant(0.0),
-                         name='c_0')(
-            x
-        )
-        out_1 = activation(out_1)
-        activations = {'c_0': None, 'c_1': out_1}
+        activations = {
+            "c_0": None,
+            "c_1": h1,
+        }
+        value = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0), name="c_1",)(h1)
 
-        out_i = out_1
-
-        for i in range(1, len(self.h_dims)):
-            out_i = nn.Dense(self.h_dims[i], kernel_init=orthogonal(2), bias_init=constant(0.0),
-                             name=f'c_{i}')(
-                out_i
-            )
-            out_i = activation(out_i)
-            activations[f'c_{i + 1}'] = out_i
-
-        out_i_plus_1 = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0), name=f'c_{len(self.h_dims)}')(
-            out_i
-        )
-        return out_i_plus_1, activations
-
-
-# class SimpleNN(nn.Module):
-#     hidden_size: int
-#
-#     @nn.compact
-#     def __call__(self, x):
-#         out = nn.Dense(self.hidden_size, kernel_init=orthogonal(2), bias_init=constant(0.0))(
-#             x
-#         )
-#         out = nn.relu(out)
-#         out = nn.Dense(
-#             self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-#         )(out)
-#         out = nn.relu(out)
-#         out = nn.Dense(
-#             self.hidden_size, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-#         )(out)
-#         return out
-
+        return value, activations
 
 class ActorCritic(nn.Module):
     action_dim: int
     is_continuous: bool = False
-    h_dims: tuple = (256, 256)
+    hidden_size: int = 128
+    activation: str = "tanh"
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, _, x):
+        obs, dones = x
 
-        actor = Actor(self.action_dim, continuous=self.is_continuous, h_dims=self.h_dims,
-                      name='actor')
-        pi, actor_activations = actor(x)
+        actor = Actor(self.action_dim, continuous=self.is_continuous, hidden_size=self.hidden_size,
+                                activation=self.activation, name='actor')
+        pi, actor_activations = actor(obs)
 
-        critic = Critic(h_dims=self.h_dims, name='critic')
-        v, critic_activations = critic(x)
+        critic = Critic(hidden_size=self.hidden_size, activation=self.activation, name='critic')
 
-        return pi, jnp.squeeze(v, axis=-1), {'actor': actor_activations, 'critic': critic_activations}
+        v, critic_activations = critic(obs)
+
+        return _, pi, jnp.squeeze(v, axis=-1), {"actor": actor_activations, "critic": critic_activations}

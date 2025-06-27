@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Sequence
 from functools import partial
 
 from brax import envs
@@ -44,7 +44,6 @@ class LogEnvState:
     returned_discounted_episode_returns: float
     returned_episode_lengths: int
     timestep: int
-
 
 class LogWrapper(GymnaxWrapper):
     """Log the episode returns and lengths."""
@@ -166,11 +165,10 @@ class NonstationaryFrictionBraxWrapper(BraxGymnaxWrapper):
     
     def __init__(self, env_name, backend="positional",
                  change_every: int = int(1e5),
-                 lower_friction_exp: float = -4,
-                 upper_friction_exp: float = 4):
+                 friction_schedule: Sequence[float] = (1e-2, 0.1, 0.5, 1.0)):
         self.change_every = change_every
-        self.lower_friction_exp = lower_friction_exp
-        self.upper_friction_exp = upper_friction_exp
+        self.schedule = jnp.array(friction_schedule, dtype=jnp.float32)
+        self.num_phases = len(self.schedule)
 
         env = envs.get_environment(env_name=env_name, backend=backend)
         self.max_steps_in_episode = 1000
@@ -195,43 +193,18 @@ class NonstationaryFrictionBraxWrapper(BraxGymnaxWrapper):
     def step(self, rng: chex.PRNGKey, state: State, action: jnp.ndarray, params=None):
         sys = self._env.unwrapped.sys
         new_timestep = state.info['timestep'] + 1
+        phase = (new_timestep // self.change_every) % self.num_phases
+        friction = self.schedule[phase]
+        new_geom_friction = state.info['sys_variation']['geom_friction'].at[:, 0].set(friction)
+        variation = {'geom_friction': new_geom_friction}
+        new_sys = sys.replace(**variation)
+        new_env = self.env_fn(new_sys)
+        next_state = new_env.step(state, action)
+        next_state.info['sys_variation'] = variation
 
-        def sample_new_friction(rng, s, a):
-            friction_rng, rng = jax.random.split(rng)
-            new_friction_exp = jax.random.uniform(friction_rng,
-                                                  minval=self.lower_friction_exp,
-                                                  maxval=self.upper_friction_exp)
-            new_friction = 10 ** new_friction_exp
-            new_geom_friction = s.info['sys_variation']['geom_friction'].at[:, 0].set(new_friction)
-            new_variation = {'geom_friction': new_geom_friction}
-
-            new_sys = sys.replace(**new_variation)
-            new_env = self.env_fn(new_sys)
-
-            s_prime = new_env.step(s, a)
-
-            reset_rng, rng = jax.random.split(rng)
-            new_s = new_env.reset(reset_rng)
-            # TODO: test this somehow. I THINK this should be correct in terms of the done.
-            new_s = new_s.replace(done=s_prime.done, reward=s_prime.reward)
-            new_s.info['sys_variation'] = new_variation
-
-            return new_s
-
-        def use_same_friction(rng, s, a):
-            new_sys = sys.replace(**s.info['sys_variation'])
-            new_env = self.env_fn(new_sys)
-
-            new_s = new_env.step(s, a)
-            new_s.info['sys_variation'] = s.info['sys_variation']
-            return new_s
-
-        reset = new_timestep % self.change_every == 0
-        next_state = jax.lax.cond(
-            reset,
-            sample_new_friction,
-            use_same_friction,
-            rng, state, action
-        )
-        return next_state.obs, next_state, next_state.reward, next_state.done > 0.5, {}
+        geom_fric = next_state.info['sys_variation']['geom_friction']
+        info = {
+            'friction': geom_fric,
+        }
+        return next_state.obs, next_state, next_state.reward, next_state.done > 0.5, info
 

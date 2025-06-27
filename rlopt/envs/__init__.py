@@ -35,12 +35,12 @@ nonstationary_to_stationary_mapping = {
 }
 
 
-def load_nonstationary_env(rng: chex.PRNGKey, env_str: str, gamma: float,
+def load_nonstationary_env(rng: chex.PRNGKey, env_str: str, gamma: float, friction_schedule,
                            change_every: int = int(1e6)):
     assert env_str in ['slippery_ant']
     if env_str == 'slippery_ant':
         env_str = 'ant'
-        env = NonstationaryFrictionBraxWrapper(env_str, change_every=change_every)
+        env = NonstationaryFrictionBraxWrapper(env_str, change_every=change_every, friction_schedule=friction_schedule)
         env_params = EnvParams(max_steps_in_episode=env.max_steps_in_episode)
         env = ClipAction(env)
     else:

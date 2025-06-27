@@ -110,6 +110,7 @@ class ContinualBackpropTrainState(TrainState):
                           maturity_threshold: float = int(1e4)):
         # we take the mean over the batch dimension. when num_env == 1, this doesn't matter.
         activations = jax.tree.map(lambda x: jnp.mean(x, axis=0), activations)
+        activations = jax.tree.map(lambda x: jnp.mean(x, axis=0), activations)
 
         # First we update our ages
         new_ages = jax.tree.map(lambda x: x + 1, self.ages)
@@ -131,7 +132,6 @@ class ContinualBackpropTrainState(TrainState):
             return output_weight_mags
 
         output_weight_mags = jax.tree_util.tree_map_with_path(get_output_weight_mags, self.utils)
-
         # Calculate our new utils
         u = jax.tree.map(lambda h, w: jnp.abs(h) + w, activations, output_weight_mags)
         new_utils = jax.tree.map(lambda ut, u: decay_rate * ut + (1 - decay_rate) * u, self.utils, u)

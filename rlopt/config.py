@@ -8,27 +8,27 @@ class Hyperparams(Tap):
     study_name: str = 'test'
     seed: int = 2024
     debug: bool = False
+    show_discounted: bool = False
     platform: Literal['cpu', 'gpu'] = 'cpu'
 
     def id_str(self):
         raise NotImplementedError
 
+class PolicyHyperparams(Tap):
+    env: str = 'ant'
+    num_envs: int = 1
+    gamma: float = 0.99
 
-class PolicyHyperparams(Hyperparams):
-    env: str = 'CartPole-v1'
-    alg: Literal['actor_critic', 'ppo'] = 'ppo'
-    lr: float = 2.5e-4
-    hidden_size: int = 32
-    num_hidden_layers: int = 1
-    l2_reg_coeff: float = 0.  # Do we use L2 regularization?
-    num_envs: int = 1  # we want to do things purely online
-    num_minibatches: int = 128  # setting num_minibatches == num_steps means we do everything sequentially
+    num_steps: int = 128
+    num_epochs: int = 50
+    update_epochs: int = 4
+    num_minibatches: int = 1
+    activation: Literal['relu', 'tanh'] = 'relu'
 
-    # Actor Critic
-    value_loss_weight: float = 0.
-
-    gamma: float = 0.95
-    num_steps: int = 20  # How many steps in our n-step returns?
+    lr: list[float] = [2.5e-4]
+    lambda0: list[float] = [0.95]
+    vf_coeff: list[float] = [0.5]
+    weight_decay: float = 0.0
 
     # Continual Backprop
     cont_backprop: bool = False
@@ -36,28 +36,36 @@ class PolicyHyperparams(Hyperparams):
     decay_rate: float = 0.99
     maturity_threshold: int = int(1e4)
 
-    # PPO
-    entropy_coeff: float = 0.01
-    vf_coeff: float = 0.5
-    clip_eps: float = 0.2
-    max_grad_norm: float = 0.5
-    no_anneal_lr: bool = False
-    adv_lambda: float = 0.95
-    update_epochs: int = 4
-
-    # Hessian Computation
+    # compute hessian
     compute_hessian_init: bool = False
     compute_hessian_end: bool = False
-    compute_hessian_size: int = 2000  # Number of samples to use for computing the hessian
+    compute_hessian_size: int = 2000
     compute_hessian_interval: int = 1
 
-    total_steps: int = int(1e7)
-    n_param_sets: int = 2
-    steps_log_freq: int = 128
-    updates_log_freq: int = 100
+    hidden_size: int = 512
+    total_steps: int = int(5e6)
+    entropy_coeff: float = 0.01
+    clip_eps: float = 0.2
+    max_grad_norm: float = 0.5
+    anneal_lr: bool = True
 
-    def id_str(self):
-        return f"{self.env}_{self.alg}_seed({self.seed})"
+    num_eval_envs: int = 10
+    steps_log_freq: int = 1
+    update_log_freq: int = 1
+    save_checkpoints: bool = False  # Do we save train_state along with our per timestep outputs?
+    save_runner_state: bool = False  # Do we save the checkpoint in the end?
+    seed: int = 2020
+    n_seeds: int = 3
+    platform: Literal['cpu', 'gpu'] = 'gpu'
+    debug: bool = False
+    show_discounted: bool = False  # For debug plotting, do we show undisc returns or disc returns?
+
+    study_name: str = 'batch_ppo_test'
+
+    def process_args(self) -> None:
+        self.vf_coeff = jnp.array(self.vf_coeff)
+        self.lr = jnp.array(self.lr)
+        self.lambda0 = jnp.array(self.lambda0)
 
 
 class PolicyEvalHyperparams(Hyperparams):
