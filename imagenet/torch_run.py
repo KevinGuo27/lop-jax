@@ -205,7 +205,7 @@ def main(arguments):
         'step_size': 0.001,
         'opt': 'sgd',
         'run_idx': 0,
-        'num_classes': 2,
+        'num_classes': 10,
     }
 
     repeat_expr(params)
