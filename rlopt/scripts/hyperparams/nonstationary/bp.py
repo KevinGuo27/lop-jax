@@ -2,8 +2,8 @@ from pathlib import Path
 
 exp_name = Path(__file__).stem
 
-lrs = [2.5e-5]
-lambda0s = [0.9]
+lrs = [2.5e-3, 2.5e-4, 2.5e-5, 2.5e-6]
+lambda0s = [0.1, 0.5, 0.7, 0.9, 0.95]
 
 hparams = {
     'file_name':
@@ -17,8 +17,6 @@ hparams = {
             'num_minibatches': 16,
             'weight_decay': 0.0,
             'change_every': 2000000,
-            'compute_hessian_init': True,
-            'compute_hessian_end': True,
             'lr': lrs,
             'lambda0': lambda0s,
             'seed': 2025,

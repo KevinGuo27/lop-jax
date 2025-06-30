@@ -87,12 +87,12 @@ if __name__ == "__main__":
     parser.add_argument('--local', action='store_true')
     args = parser.parse_args()
 
-    runs_dir = Path(ROOT_DIR, 'rlopt', 'scripts', 'runs')
+    runs_dir = Path('..', 'scripts', 'runs')
 
     hparam_path = Path(args.hyperparam_file).resolve()
     hparams = import_module_to_var(hparam_path, 'hparams')
 
-    results_dir = Path(ROOT_DIR, 'rlopt', 'results')
+    results_dir = Path('..', 'results')
     # if not args.local:
     #     # Here we assume we want to write to the scratch directory in CC.
     #     results_dir = Path("/home/taodav/scratch/uncertainty/results")

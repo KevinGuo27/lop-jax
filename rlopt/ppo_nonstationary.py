@@ -5,7 +5,7 @@ from dataclasses import replace
 from functools import partial
 import inspect
 from time import time
-
+import pickle
 import chex
 import flax.training.train_state
 from flax.training.train_state import TrainState
@@ -53,25 +53,18 @@ class PPO:
 
     def act(self, rng: chex.PRNGKey,
             train_state: flax.training.train_state.TrainState,
-            hidden_state: chex.Array,
-            obs: chex.Array, done: chex.Array):
+            obs: chex.Array):
 
         # SELECT ACTION
-        ac_in = (obs[np.newaxis, :], done[np.newaxis, :])
-        hstate, pi, value, activations = self.network.apply(train_state.params, hidden_state, ac_in)
+        pi, value, activations = self.network.apply(train_state.params, obs)
         action = pi.sample(seed=rng)
         log_prob = pi.log_prob(action)
-        value, action, log_prob = (
-            value.squeeze(0),
-            action.squeeze(0),
-            log_prob.squeeze(0),
-        )
-        return value, action, log_prob, hstate, activations
+        return value, action, log_prob, activations
 
-    def loss(self, params, init_hstate, traj_batch, gae, targets):
+    def loss(self, params, traj_batch, gae, targets):
         # RERUN NETWORK
-        _, pi, value, _ = self.network.apply(
-            params, init_hstate[0], (traj_batch.obs, traj_batch.done)
+        pi, value, _ = self.network.apply(
+            params, traj_batch.obs
         )
         log_prob = pi.log_prob(traj_batch.action)
 
@@ -109,10 +102,10 @@ class PPO:
         return total_loss, (value_loss, loss_actor, entropy)
 
 
-def env_step(runner_state, unused, agent: PPO, env, env_params, compute_hessian=False):
-    train_state, env_state, last_obs, last_done, hstate, rng = runner_state
+def env_step(runner_state, unused, agent: PPO, env, env_params, args, compute_hessian=False):
+    train_state, env_state, last_obs, rng = runner_state
     rng, _rng = jax.random.split(rng)
-    value, action, log_prob, hstate, activations = agent.act(_rng, train_state, hstate, last_obs, last_done)
+    value, action, log_prob, activations = agent.act(_rng, train_state, last_obs)
     if args.cont_backprop and not compute_hessian:
         rng, _rng = jax.random.split(rng)
         train_state = train_state.update_and_reinit(_rng,
@@ -123,17 +116,17 @@ def env_step(runner_state, unused, agent: PPO, env, env_params, compute_hessian=
 
     # STEP ENV
     rng, _rng = jax.random.split(rng)
-    rng_step = jax.random.split(_rng, hstate.shape[0])
+    rng_step = jax.random.split(_rng, args.num_envs)
     obsv, env_state, reward, done, info = env.step(rng_step, env_state, action, env_params)
     
     transition = Transition(
-        last_done, action, value, reward, log_prob, last_obs, info
+        done, action, value, reward, log_prob, last_obs, info
     )
-    runner_state = (train_state, env_state, obsv, done, hstate, rng)
+    runner_state = (train_state, env_state, obsv, rng)
     return runner_state, transition
 
 
-def calculate_gae(traj_batch, last_val, last_done, gae_lambda, gamma):
+def calculate_gae(traj_batch, last_val, gae_lambda, gamma):
     def _get_advantages(carry, transition):
         gae, next_value, gae_lambda = carry
         done, value, reward = transition.done, transition.value, transition.reward
@@ -166,9 +159,9 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
     num_friction_changes = (
         args.total_steps // args.change_every // args.num_envs
     )
-    # randomly generate a friction schedule
-    rng, _rng = jax.random.split(rand_key)
-    friction_schedule = jax.random.uniform(_rng, (num_friction_changes,), minval=0, maxval=2)
+    with open("/users/kguo32/rl-opt/rlopt/frictions", 'rb+') as f:
+        frictions = pickle.load(f)
+    friction_schedule = frictions[args.friction_seed][:num_friction_changes]
     print('Friction schedule:', friction_schedule)
     env, env_params = load_nonstationary_env(rng, args.env, gamma=args.gamma, 
                         change_every=args.change_every, friction_schedule=friction_schedule)
@@ -194,26 +187,31 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
 
     _calculate_gae = calculate_gae
 
+    def linear_schedule(count):
+            frac = (
+                    1.0
+                    - (count // (args.num_minibatches * args.update_epochs))
+                    / num_updates
+            )
+            return lr * frac
+
     def train(vf_coeff, lambda0, lr, rng):
         agent = PPO(network, vf_coeff=vf_coeff,
                     clip_eps=args.clip_eps, entropy_coeff=args.entropy_coeff)
 
         # initialize functions
-        _env_step = partial(env_step, agent=agent, env=env, env_params=env_params, compute_hessian=False)
-        _hessian_env_step = partial(env_step, agent=agent, env=env, env_params=env_params, compute_hessian=True)
-        gae_lambda = jnp.array(lambda0)
+        _env_step = partial(env_step, agent=agent, env=env, env_params=env_params, compute_hessian=False, args=args)
+        _hessian_env_step = partial(env_step, agent=agent, env=env, env_params=env_params, compute_hessian=True, args=args)
+        # gae_lambda = jnp.array(lambda0)
 
         def hessian_computation(runner_state, epoch, at_init):
-            train_state, env_state, last_obs, last_done, hstate, rng = runner_state
+            train_state, env_state, last_obs, rng = runner_state
             reset_rng = jax.random.split(rng, args.num_envs)
             eval_obsv, eval_env_state = env.reset(reset_rng, env_params)
-            init_hstate = ScannedRNN.initialize_carry(args.num_envs, args.hidden_size)
             eval_runner_state = (
                 train_state,
                 eval_env_state,
                 eval_obsv,
-                jnp.zeros((args.num_envs), dtype=bool),
-                init_hstate,
                 rng,
             )
 
@@ -222,15 +220,15 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                 _hessian_env_step, eval_runner_state, None, env_params.max_steps_in_episode
             )
 
-            train_state, env_state, last_obs, last_done, hstate, rng = eval_runner_state
-            _, _, last_val, _ = network.apply(train_state.params, hstate, (last_obs[np.newaxis, :], last_done[np.newaxis, :]))
-            last_val = last_val.squeeze(0)
-            advantages, targets = _calculate_gae(eval_traj_batch, last_val, last_done, gae_lambda, args.gamma)
+            train_state, env_state, last_obs, rng = eval_runner_state
+            _, last_val, _ = network.apply(train_state.params, last_obs)
+
+            advantages, targets = _calculate_gae(eval_traj_batch, last_val, lambda0, args.gamma)
 
             def hessian_loss(params, traj_batch, advantages, targets):
-                total_loss, _ = agent.loss(params, init_hstate, traj_batch, advantages, targets)
+                total_loss, _ = agent.loss(params, traj_batch, advantages, targets)
                 return total_loss
-                            
+
             hvp_fn, unravel, num_params = get_hvp_fn(hessian_loss, train_state.params, (eval_traj_batch, advantages, targets))
             hvp_cl = lambda v: hvp_fn(train_state.params, v)
             rng, _rng = jax.random.split(rng)
@@ -243,25 +241,10 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
             density, grids = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
             jax.debug.callback(plot_hessian_spectrum, grids, density, epoch, args.study_name, is_initialization=at_init)
 
-        def linear_schedule(count):
-            frac = (
-                    1.0
-                    - (count // (args.num_minibatches * args.update_epochs))
-                    / num_updates
-            )
-            return lr * frac
-
-
         # INIT NETWORK
         rng, _rng = jax.random.split(rng)
-        init_x = (
-            jnp.zeros(
-                (1, args.num_envs, *env.observation_space(env_params).shape)
-            ),
-            jnp.zeros((1, args.num_envs)),
-        )
-        init_hstate = ScannedRNN.initialize_carry(args.num_envs, args.hidden_size)
-        network_params = agent.network.init(_rng, init_hstate, init_x)
+        init_x = jnp.zeros((env.observation_space(env_params).shape))
+        network_params = agent.network.init(_rng, init_x)
         param_count = sum(x.size for x in jax.tree_leaves(network_params))
         print('Network params number:', param_count)
         if args.anneal_lr:
@@ -302,20 +285,16 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
         rng, _rng = jax.random.split(rng)
         reset_rng = jax.random.split(_rng, args.num_envs)
         obsv, env_state = env.reset(reset_rng, env_params)
-        init_hstate = ScannedRNN.initialize_carry(args.num_envs, args.hidden_size)
 
         # We first need to populate our LogEnvState stats.
         rng, _rng = jax.random.split(rng)
         init_rng = jax.random.split(_rng, args.num_envs)
         init_obsv, init_env_state = env.reset(init_rng, env_params)
-        init_init_hstate = ScannedRNN.initialize_carry(args.num_envs, args.hidden_size)
 
         init_runner_state = (
             train_state,
             env_state,
             init_obsv,
-            jnp.zeros(args.num_envs, dtype=bool),
-            init_init_hstate,
             _rng,
         )
 
@@ -336,34 +315,30 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
         def _epoch_step(runner_state, unused):
             def _update_step(runner_state, unused):
                 # COLLECT TRAJECTORIES
-                initial_hstate = runner_state[-2]
                 runner_state, traj_batch = jax.lax.scan(
                     _env_step, runner_state, jnp.arange(args.num_steps), args.num_steps
                 )
 
                 # CALCULATE ADVANTAGE
-                train_state, env_state, last_obs, last_done, hstate, rng = runner_state
-                ac_in = (last_obs[np.newaxis, :], last_done[np.newaxis, :])
-                _, _, last_val, _ = network.apply(train_state.params, hstate, ac_in)
-                last_val = last_val.squeeze(0)
+                train_state, env_state, last_obs, rng = runner_state
+                _, last_val, _ = network.apply(train_state.params, last_obs)
 
-                advantages, targets = _calculate_gae(traj_batch, last_val, last_done, gae_lambda, args.gamma)
+                advantages, targets = _calculate_gae(traj_batch, last_val, lambda0, args.gamma)
 
                 # UPDATE NETWORK
                 def _update_epoch(update_state, unused):
                     def _update_minbatch(train_state, batch_info):
-                        init_hstate, traj_batch, advantages, targets = batch_info
+                        traj_batch, advantages, targets = batch_info
 
                         grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
                         total_loss, grads = grad_fn(
-                            train_state.params, init_hstate, traj_batch, advantages, targets
+                            train_state.params, traj_batch, advantages, targets
                         )
                         train_state = train_state.apply_gradients(grads=grads)
                         return train_state, total_loss
 
                     (
                         train_state,
-                        init_hstate,
                         traj_batch,
                         advantages,
                         targets,
@@ -372,19 +347,25 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
 
                     # SHUFFLE COLLECTED BATCH
                     rng, _rng = jax.random.split(rng)
-                    permutation = jax.random.permutation(_rng, args.num_envs)
-                    batch = (init_hstate, traj_batch, advantages, targets)
-
-                    shuffled_batch = jax.tree.map(
-                        lambda x: jnp.take(x, permutation, axis=1), batch
+                    batch_size = minibatch_size * args.num_minibatches
+                    assert (
+                        batch_size == args.num_steps * args.num_envs
+                    ), "batch size must be equal to number of steps * number of envs"
+                    permutation = jax.random.permutation(_rng, batch_size)
+                    batch = (traj_batch, advantages, targets)
+                    batch = jax.tree_util.tree_map(
+                        lambda x: x.reshape((batch_size,) + x.shape[2:]), batch
+                    )
+                    shuffled_batch = jax.tree_util.tree_map(
+                        lambda x: jnp.take(x, permutation, axis=0), batch
                     )
 
-                    minibatches = jax.tree.map(
+                    minibatches = jax.tree_util.tree_map(
                         lambda x: jnp.swapaxes(
                             jnp.reshape(
                                 x,
-                                [x.shape[0], args.num_minibatches, -1]
-                                + list(x.shape[2:]),
+                                [args.num_minibatches, -1]
+                                + list(x.shape[1:]),
                                 ),
                             1,
                             0,
@@ -397,7 +378,6 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                     )
                     update_state = (
                         train_state,
-                        init_hstate,
                         traj_batch,
                         advantages,
                         targets,
@@ -405,10 +385,8 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                     )
                     return update_state, total_loss
 
-                init_hstate = initial_hstate[None, :]  # TBH
                 update_state = (
                     train_state,
-                    init_hstate,
                     traj_batch,
                     advantages,
                     targets,
@@ -444,7 +422,7 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
 
                     jax.debug.callback(callback, metric)
 
-                runner_state = (train_state, env_state, last_obs, last_done, hstate, rng)
+                runner_state = (train_state, env_state, last_obs, rng)
 
                 return runner_state, metric
 
@@ -461,8 +439,6 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
             train_state, 
             env_state, 
             obsv, 
-            jnp.zeros((args.num_envs), dtype=bool),
-            init_hstate,
             _rng)
         # final_runner_state, (metric, all_runner_states) = jax.lax.scan(
         #     _epoch_step, init_runner_state, None, num_epochs
@@ -479,7 +455,7 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                 hessian_computation(runner_state, epoch, at_init=False)
             metrics_list.append(metric)
             states_list.append(runner_state)
-        metric = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *metrics_list)
+        metric = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *metrics_list)
         all_runner_states = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *states_list)
         final_runner_state = runner_state
 
@@ -492,7 +468,7 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
         res = {"runner_state": runner_states, "metric": metric}
         return res
 
-    return train
+    return train, friction_schedule
 
 
 if __name__ == "__main__":
@@ -504,7 +480,7 @@ if __name__ == "__main__":
     rng = jax.random.PRNGKey(args.seed)
     make_train_rng, rng = jax.random.split(rng)
     rngs = jax.random.split(rng, args.n_seeds)
-    train_fn = make_train(args, make_train_rng)
+    train_fn, friction_schedule = make_train(args, make_train_rng)
     train_args = list(inspect.signature(train_fn).parameters.keys())
 
     vmaps_train = train_fn
@@ -544,7 +520,8 @@ if __name__ == "__main__":
         'out': out,
         'args': args.as_dict(),
         'total_runtime': total_runtime,
-        'final_train_state': final_train_state
+        'final_train_state': final_train_state,
+        'friction_schedule': friction_schedule,
     }
 
     all_results = jax.tree.map(numpyify, all_results)

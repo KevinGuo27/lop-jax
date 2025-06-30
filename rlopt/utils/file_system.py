@@ -21,7 +21,7 @@ from definitions import ROOT_DIR
 
 
 def get_results_path(args, return_npy: bool = True):
-    results_dir = Path(ROOT_DIR, 'results')
+    results_dir = Path('/users/kguo32/rl-opt/results')
     results_dir.mkdir(exist_ok=True)
 
     args_hash = make_hash_md5(args.as_dict())

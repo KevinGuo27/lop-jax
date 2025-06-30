@@ -113,8 +113,8 @@ class ActorCritic(nn.Module):
     activation: str = "tanh"
 
     @nn.compact
-    def __call__(self, _, x):
-        obs, dones = x
+    def __call__(self, x):
+        obs = x
 
         actor = Actor(self.action_dim, continuous=self.is_continuous, hidden_size=self.hidden_size,
                                 activation=self.activation, name='actor')
@@ -124,4 +124,4 @@ class ActorCritic(nn.Module):
 
         v, critic_activations = critic(obs)
 
-        return _, pi, jnp.squeeze(v, axis=-1), {"actor": actor_activations, "critic": critic_activations}
+        return pi, jnp.squeeze(v, axis=-1), {"actor": actor_activations, "critic": critic_activations}

@@ -19,10 +19,9 @@ class PolicyHyperparams(Tap):
     num_envs: int = 1
     gamma: float = 0.99
 
-    num_steps: int = 128
-    num_epochs: int = 50
-    update_epochs: int = 4
-    num_minibatches: int = 1
+    num_steps: int = 1024
+    update_epochs: int = 10
+    num_minibatches: int = 16
     activation: Literal['relu', 'tanh'] = 'relu'
 
     lr: list[float] = [2.5e-4]
@@ -47,7 +46,7 @@ class PolicyHyperparams(Tap):
     entropy_coeff: float = 0.01
     clip_eps: float = 0.2
     max_grad_norm: float = 0.5
-    anneal_lr: bool = True
+    anneal_lr: bool = False
 
     num_eval_envs: int = 10
     steps_log_freq: int = 1
@@ -81,3 +80,4 @@ class PolicyEvalHyperparams(Hyperparams):
 
 class NonStationaryPolicyHyperparams(PolicyHyperparams):
     change_every: int = int(1e6)
+    friction_seed: int = 1  # Seed for the friction schedule
