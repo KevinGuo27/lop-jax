@@ -7,26 +7,29 @@ class Hyperparams(Tap):
     study_name: str = 'test'
     seed: int = 2024
     debug: bool = False
+    wandb: bool = False
     platform: Literal['cpu', 'gpu'] = 'gpu'
     n_seeds: int = 1
 
 class ImagenetHyperparams(Hyperparams):
+    #env params
     env: str = 'imagenet'
-    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2_er'
-    alg: Literal['actor_critic', 'ppo'] = 'ppo'
-    activation: Literal['relu', 'tanh'] = 'relu'
-    lr: list[float] = [0.01]
-    optimizer: Literal['adam', 'sgd'] = 'sgd'
-    weight_decay: float = 0.001 # Do we use L2 regularization?
-    num_features: int = 1000  # Number of input features
-    change_after: int = 10 * 6000  # Number of steps after which the task changes
-    to_perturb: bool = False  # Whether to perturb the input data
-    perturb_scale: int = 1e-5
-    num_hidden_layers: int = 3
+    num_tasks: int = 2000
+    num_classes: int = 2
+    num_showings: int = 250
     mini_batch_size: int = 100
-    no_anneal_lr: bool = True
-    max_grad_norm: float = 0.5
-    num_tasks: int = 800  # Number of tasks in the permuted MNIST
+    run_idx: int = 0
+    
+
+
+    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'bp'
+    activation: Literal['relu', 'tanh'] = 'relu'
+    lr: list[float] = [0.001]
+    momentum: float = 0.9
+    optimizer: Literal['adam', 'sgd'] = 'sgd'
+    weight_decay: float = 0.00 # Do we use L2 regularization?
+
+
 
     # Effective Rank
     er_lr: list[float] = [0.01]
@@ -36,9 +39,8 @@ class ImagenetHyperparams(Hyperparams):
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?
     evaluate_previous: bool = False  # Do we evaluate on previous tasks?
-    eval_size: int = 2000
-    compute_hessian: bool = False
-    compute_hessian_size: int = 2000  # Number of samples to use for computing the hessian
+    compute_hessian: bool = True
+    compute_hessian_size: int = 200  # Number of samples to use for computing the hessian
     compute_hessian_interval: int = 1
 
     # CBP

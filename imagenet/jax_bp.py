@@ -46,6 +46,7 @@ class Agent:
     def __init__(self, network: ConvNet):
         self.network = network
         self.loss = jax.jit(self.loss)
+        self.train_step = jax.jit(self.train_step)
     
     def predict(self, params, x):
         output = self.network.apply({'params': params}, x)
@@ -60,7 +61,7 @@ class Agent:
         grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
         (loss, logits), grads = grad_fn(state.params)
         state = state.apply_gradients(grads=grads)
-        return state, loss, logits
+        return state, loss, logits, grads
     
 
     def loss(self, params, x, y):
@@ -109,7 +110,7 @@ class ShrinkAndPerturbAgent(Agent):
 
         state = state.replace(params=perturbed_params)
 
-        return state, loss, logits, rng
+        return state, loss, logits, rng, grads
 
 
 
