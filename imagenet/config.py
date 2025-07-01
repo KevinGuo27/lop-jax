@@ -18,18 +18,16 @@ class ImagenetHyperparams(Hyperparams):
     lr: list[float] = [0.01]
     optimizer: Literal['adam', 'sgd'] = 'sgd'
     weight_decay: float = 0.001 # Do we use L2 regularization?
-    num_features: int = 1000  # Number of input features
-    change_after: int = 10 * 6000  # Number of steps after which the task changes
     to_perturb: bool = False  # Whether to perturb the input data
     perturb_scale: int = 1e-5
-    num_hidden_layers: int = 3
     mini_batch_size: int = 100
     no_anneal_lr: bool = True
-    max_grad_norm: float = 0.5
-    num_tasks: int = 800  # Number of tasks in the permuted MNIST
-
+    max_grad_norm: float = 1e9
+    num_tasks: int = 2000
+    num_epochs: int = 250
+    momentum: float = 0.9
     # Effective Rank
-    er_lr: list[float] = [0.01]
+    er_lr: list[float] = [0.001]
     er_batch: int = 1
     er_step: int = 1
 

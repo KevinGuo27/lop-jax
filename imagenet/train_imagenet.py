@@ -78,6 +78,8 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
     images_per_class = train_images_per_class + test_images_per_class
     classes_per_task = 2
     examples_per_epoch = train_images_per_class * classes_per_task
+    num_epochs = args.num_epochs
+    
     def load_imagenet(classes=[]):
         x_train, y_train, x_test, y_test = [], [], [], []
         for idx, _class in enumerate(classes):
@@ -93,6 +95,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
         x_test = jnp.array(np.concatenate(x_test), dtype=jnp.float32).transpose(0, 2, 3, 1)
         y_test = jnp.array(np.concatenate(y_test))
         return x_train, y_train, x_test, y_test
+
     def linear_schedule(count):
         frac = (
             1.0
@@ -116,7 +119,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
             else:
                 tx = optax.chain(
                     optax.add_decayed_weights(args.weight_decay),
-                    optax.sgd(learning_rate=lr)
+                    optax.sgd(learning_rate=lr, momentum=args.momentum)
                 )
         if args.cont_backprop:
             train_state = ContinualBackpropTrainState.create(
@@ -181,7 +184,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
                 runner_state = (x, y, train_state, rng)
                 return runner_state, (loss, accuracy)
 
-            x, y, train_state, rng = runner_state
+            x, y, x_eval, y_eval, train_state, rng = runner_state
 
             update_erbatch_runner_state = (x, y, train_state, rng)
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(update_erbatch, update_erbatch_runner_state, 
@@ -221,7 +224,6 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
         update_task = jax.jit(update_task)
         for task in range(num_tasks):
             x_train, y_train, x_eval, y_eval = load_imagenet(class_order[task*classes_per_task:(task+1)*classes_per_task])
-
             #compute hessian at the start of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
                 # Hessian computation on test set
@@ -253,13 +255,20 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True)
 
-            runner_state = (
-                x_train,
-                y_train,
-                train_state,
-                rng)
-            runner_state, res_info = update_task(runner_state, task)
-            x_train, y_train, train_state, rng = runner_state
+            for epoch_idx in tqdm(range(num_epochs)):
+                rng, _rng = jax.random.split(rng)
+                example_order = jax.random.permutation(rng, train_images_per_class * classes_per_task)
+                x_train = x_train[example_order]
+                y_train = y_train[example_order]
+                runner_state = (
+                    x_train,
+                    y_train,
+                    x_eval,
+                    y_eval,
+                    train_state,
+                    rng)
+                runner_state, res_info = update_task(runner_state, task)
+                x_train, y_train, train_state, rng = runner_state
             rank_list.append(res_info['rank'])
             eff_rank_list.append(res_info['effective_rank'])
             approx_rank_list.append(res_info['approx_rank'])
