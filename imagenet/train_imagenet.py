@@ -173,7 +173,9 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
                     x, train_state, rng = runner_state
                     er_loss = agent.effective_rank_loss(train_state.params, x)
                     grads = jax.grad(agent.effective_rank_loss)(train_state.params, x)
-                    train_state = train_state.apply_gradients(grads=grads)
+                    updates = jax.tree_util.tree_map(lambda g: -er_lr * g, grads)
+                    new_params = optax.apply_updates(train_state.params, updates)
+                    train_state = train_state.replace(params=new_params)
                     return (x, train_state, rng), er_loss
 
                 if args.agent in ['er', 'l2_er']:

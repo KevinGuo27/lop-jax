@@ -5,20 +5,21 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
+from pathlib import Path
 import chex
-from config import PermutedMnistHyperparams
-from utils.evaluation import summarize_all_layers
+from permuted_mnist.config import PermutedMnistHyperparams
+from permuted_mnist.utils.evaluation import summarize_all_layers
 import optax
 from flax.training.train_state import TrainState
 from flax.training import orbax_utils
-from utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
+from permuted_mnist.utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
 import orbax.checkpoint
-from utils.optimizer import l2_regularization, adam_with_param_counts
-from utils.hessian_computation import get_hvp_fn
-from utils.lanczos import lanczos_alg
-
-from utils.density import tridiag_to_density, tridiag_to_density_and_erank
-from cbp import ContinualBackpropTrainState
+from permuted_mnist.utils.optimizer import l2_regularization, adam_with_param_counts
+from permuted_mnist.utils.hessian_computation import get_hvp_fn
+from permuted_mnist.utils.lanczos import lanczos_alg
+from definitions import ROOT_DIR
+from permuted_mnist.utils.density import tridiag_to_density, tridiag_to_density_and_erank
+from permuted_mnist.cbp import ContinualBackpropTrainState
 
 def compute_param_norms(params):
     """Compute L1, L2, and L∞ norms of parameters"""
@@ -153,21 +154,6 @@ def perturb_params(params, rng, scale):
     ]
     return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
 
-    def perturb(self, params, perturb_scale, rng):
-        return perturb_params(params, rng, perturb_scale)
-
-def perturb_params(params, rng, scale):
-    """Add N(0, scale) noise to every parameter tensor in the tree."""
-    
-    leaves, treedef = jax.tree_util.tree_flatten(params)
-    rngs = jax.random.split(rng, len(leaves))
-    
-    new_leaves = [
-        p + scale * jax.random.normal(r, p.shape, p.dtype)
-        for p, r in zip(leaves, rngs)
-    ]
-    return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
-
 def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
     network = DeepFFNN(
         num_features=args.num_features,
@@ -191,7 +177,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         agent = EffectiveRankAgent(network)
         
         # load data
-        with open('data/mnist_', 'rb') as f:
+        data_path = Path(ROOT_DIR, 'permuted_mnist', 'data', 'mnist_')
+        with open(data_path, 'rb') as f:
             x_all, y_all, _, _ = np.load(f, allow_pickle=True)
         x_all = jnp.array(x_all)
         y_all = jnp.array(y_all)
@@ -262,7 +249,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     x, train_state, rng = runner_state
                     er_loss = agent.effective_rank_loss(train_state.params, x)
                     grads = jax.grad(agent.effective_rank_loss)(train_state.params, x)
-                    train_state = train_state.apply_gradients(grads=grads)
+                    updates = jax.tree_util.tree_map(lambda g: -er_lr * g, grads)
+                    new_params = optax.apply_updates(train_state.params, updates)
+                    train_state = train_state.replace(params=new_params)
                     return (x, train_state, rng), er_loss
 
                 if args.agent in ['er', 'l2_er']:
@@ -301,7 +290,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             l1_norm_change, l2_norm_change, linf_norm_change = compute_param_change_norms(old_params, train_state.params)
 
             if args.debug:
-                jax.debug.print("Task {t}: Train Accuracy {acc}, Eval Accuracy = {acc_eval}, acc on previous train set = {acc_pretrain}, L1 norm change = {l1_norm_change}, L2 norm change = {l2_norm_change}, Linf norm change = {linf_norm_change}", t=task, acc=accuracy, acc_eval=accuracy_eval, acc_pretrain=accuracy_pre, l1_norm_change=l1_norm_change, l2_norm_change=l2_norm_change, linf_norm_change=linf_norm_change)
+                jax.debug.print("Task {t}: Train Accuracy {acc}, Eval Accuracy = {acc_eval}, Accuracy on previous task = {acc_pretrain}", t=task, acc=accuracy, acc_eval=accuracy_eval, acc_pretrain=accuracy_pre)
                 jax.debug.print(
                     "Rank: {r}, EffRank: {er}, ApproxRank: {ar}, DeadNeurons: {dn}",
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
@@ -491,7 +480,6 @@ if __name__ == "__main__":
 
     train_jit = vmaps_train
     t = time()
-    print(*swept_args)
     out = train_jit(*swept_args)
     new_t = time()
     total_runtime = new_t - t
