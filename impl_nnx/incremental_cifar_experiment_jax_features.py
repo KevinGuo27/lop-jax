@@ -38,7 +38,7 @@ from utils.lanczos import lanczos_alg
 from utils.density import tridiag_to_density
 from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
-from utils.evaluation import summarize_all_layers
+from utils.evaluation import summarize_all_layers_v2
 
 # my agents file
 from agents_features import build_agent
@@ -633,13 +633,17 @@ class IncrementalCIFARExperiment(Experiment):
             net_tmp = nnx.merge(nnx.graphdef(self.net), params)
             logits_full, features = net_tmp(x_batch)
             logits = logits_full[:, current_classes]
-            return optax.softmax_cross_entropy_with_integer_labels(logits, y_batch).mean()
+            ce_loss = optax.softmax_cross_entropy_with_integer_labels(logits, y_batch).mean()
+            l2_loss = l2_regularization(params, self.weight_decay)
+            return ce_loss + l2_loss
 
         def loss_fn_eval(params, x_batch, y_batch):
             net_tmp = nnx.merge(nnx.graphdef(self.net), params)
             logits_full, features = net_tmp(x_batch)
             logits = logits_full[:, current_classes]
-            return optax.softmax_cross_entropy_with_integer_labels(logits, y_batch).mean()
+            ce_loss = optax.softmax_cross_entropy_with_integer_labels(logits, y_batch).mean()
+            l2_loss = l2_regularization(params, self.weight_decay)
+            return ce_loss + l2_loss
 
         # Create HVP functions
         hvp_fn_train, unravel, num_params = get_hvp_fn(

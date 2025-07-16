@@ -1,9 +1,0 @@
-## SLURM PROLOG ###############################################################
-##    Job ID : 12060605
-##  Job Name : run_incremental_cifar_bdl_l2
-##  Nodelist : gpu2113
-##      CPUs : 
-##  Mem/Node : 65536 MB
-## Directory : /oscar/home/tserapio/lop-jax/impl_nnx
-##   Job Started : Wed Jul 16 03:53:34 PM EDT 2025
-###############################################################################

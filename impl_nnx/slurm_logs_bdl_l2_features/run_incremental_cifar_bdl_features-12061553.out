@@ -1,0 +1,20 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 12061553
+##  Job Name : run_incremental_cifar_bdl_l2
+##  Nodelist : gpu2505
+##      CPUs : 
+##  Mem/Node : 65536 MB
+## Directory : /oscar/home/tserapio/lop-jax/impl_nnx
+##   Job Started : Wed Jul 16 04:18:13 PM EDT 2025
+###############################################################################
+Config file successfully stored!
+JAX is using GPU: cuda:0
+   Available GPU devices: 1
+   GPU 0: cuda:0
+Saved Training Hessian spectrum to hessian/cifar_jax_july16/hessian_task_0_init_train.png
+Saved Test Hessian spectrum to hessian/cifar_jax_july16/hessian_task_0_init_test.png
+[Hessian-start] Task 0 — top-eigenvalue(train) ≈ 0.0329, top-eigenvalue(eval) ≈ -0.0515
+	Epoch number: 1
+	Current stepsize: 0.10000
+		Step Number: 25
+		Online accuracy: 0.30
