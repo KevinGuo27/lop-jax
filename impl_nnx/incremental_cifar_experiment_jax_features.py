@@ -38,6 +38,7 @@ from utils.lanczos import lanczos_alg
 from utils.density import tridiag_to_density
 from utils.optimizer import l2_regularization, adam_with_param_counts
 from utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
+from utils.evaluation import summarize_all_layers
 
 # my agents file
 from agents_features import build_agent
@@ -334,6 +335,10 @@ class IncrementalCIFARExperiment(Experiment):
 
             # print progress
             self._print("\t\t{0} accuracy: {1:.4f}".format(data_name, accuracy))
+            self._print("\t\t{0} effective rank: {1:.4f}".format(data_name, effective_rank))
+            self._print("\t\t{0} approx rank: {1:.4f}".format(data_name, approx_rank))
+            self._print("\t\t{0} approx rank abs: {1:.4f}".format(data_name, approx_rank_abs))
+            self._print("\t\t{0} dead neurons: {1:.4f}".format(data_name, dead_neurons))
 
         self.net.train()
         self._print("\t\tEpoch run time in seconds: {0:.4f}".format(epoch_runtime))
@@ -350,7 +355,7 @@ class IncrementalCIFARExperiment(Experiment):
             logits = logits_full[:, current_classes] 
             loss = optax.softmax_cross_entropy_with_integer_labels(
                 logits=logits, labels=labels).mean()
-            rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features)
+            rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers_v2(features)
             return loss, logits, rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons
 
         avg_loss = 0.0
@@ -504,7 +509,7 @@ class IncrementalCIFARExperiment(Experiment):
 
             epoch_start_time = time.perf_counter()
 
-            buffer_imgs, buffer_labels = [], []
+            # buffer_imgs, buffer_labels = [], []
             for step_number, sample in enumerate(train_dataloader):
                 # Convert data once and efficiently
                 image = jnp.asarray(sample["image"].numpy())
@@ -521,26 +526,26 @@ class IncrementalCIFARExperiment(Experiment):
                 self.train_state, loss, acc = self.agent.base_train_step(
                     self.net, self.train_state, image, labels_int, classes_tuple
                 )
-                buffer_imgs.append(image)
-                buffer_labels.append(labels_int)
+                # buffer_imgs.append(image)
+                # buffer_labels.append(labels_int)
 
                 # then, update the model just in case
                 self.net = self.train_state.model
 
                 # this is when we do ER update
-                if len(buffer_imgs) == self.agent.er_batch:
-                    print("ER Step")
-                    big_imgs = jnp.concatenate(buffer_imgs, axis=0)
-                    big_lbls = jnp.concatenate(buffer_labels, axis=0)
+                # if len(buffer_imgs) == self.agent.er_batch:
+                #     print("ER Step")
+                #     big_imgs = jnp.concatenate(buffer_imgs, axis=0)
+                #     big_lbls = jnp.concatenate(buffer_labels, axis=0)
                     
-                    for _ in range(self.agent.er_steps):
-                        self.train_state, er_loss, _ = self.agent.er_train_step(
-                            self.net, self.train_state,
-                            big_imgs, big_lbls, classes_tuple
-                        )
+                #     for _ in range(self.agent.er_steps):
+                #         self.train_state, er_loss, _ = self.agent.er_train_step(
+                #             self.net, self.train_state,
+                #             big_imgs, big_lbls, classes_tuple
+                #         )
                         
-                    buffer_imgs.clear()
-                    buffer_labels.clear()
+                #     buffer_imgs.clear()
+                #     buffer_labels.clear()
 
                 # Store summaries
                 self.running_loss += loss
@@ -669,7 +674,7 @@ class IncrementalCIFARExperiment(Experiment):
         jax.debug.callback(
             plot_hessian_spectrum,
             grid_train, dens_train, grid_eval, dens_eval,
-            task_id, "cifar_jax_effective_rank", at_init=at_init
+            task_id, "cifar_jax_july16", at_init=at_init
         )
 
         # Log summary information
