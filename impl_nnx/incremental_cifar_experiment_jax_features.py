@@ -313,7 +313,7 @@ class IncrementalCIFARExperiment(Experiment):
         for data_name, data_loader, compare_to_best in [("test", test_data, False), ("validation", val_data, True)]:
             # evaluate on data
             evaluation_start_time = time.perf_counter()
-            loss, accuracy = self.evaluate_network(data_loader)
+            loss, accuracy, rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = self.evaluate_network(data_loader)
             evaluation_time = time.perf_counter() - evaluation_start_time
 
             if compare_to_best:
@@ -325,6 +325,12 @@ class IncrementalCIFARExperiment(Experiment):
             self.results_dict[data_name + "_evaluation_runtime"][epoch_number] = evaluation_time
             self.results_dict[data_name + "_loss_per_epoch"][epoch_number] = float(loss)
             self.results_dict[data_name + "_accuracy_per_epoch"][epoch_number] = float(accuracy)
+
+            self.results_dict[data_name + "_rank_per_epoch"][epoch_number] = float(rank)
+            self.results_dict[data_name + "_effective_rank_per_epoch"][epoch_number] = float(effective_rank)
+            self.results_dict[data_name + "_approx_rank_per_epoch"][epoch_number] = float(approx_rank)
+            self.results_dict[data_name + "_approx_rank_abs_per_epoch"][epoch_number] = float(approx_rank_abs)
+            self.results_dict[data_name + "_dead_neurons_per_epoch"][epoch_number] = float(dead_neurons)
 
             # print progress
             self._print("\t\t{0} accuracy: {1:.4f}".format(data_name, accuracy))
@@ -344,7 +350,8 @@ class IncrementalCIFARExperiment(Experiment):
             logits = logits_full[:, current_classes] 
             loss = optax.softmax_cross_entropy_with_integer_labels(
                 logits=logits, labels=labels).mean()
-            return loss, logits
+            rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features)
+            return loss, logits, rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons
 
         avg_loss = 0.0
         avg_acc = 0.0
@@ -360,15 +367,15 @@ class IncrementalCIFARExperiment(Experiment):
             
             # Convert one-hot to integer labels for JAX loss function
             test_labels_int = jnp.argmax(test_labels, axis=1)
-            
-            loss, logits = eval_step(self.net, images, test_labels_int, current_classes)
+
+            loss, logits, rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = eval_step(self.net, images, test_labels_int, current_classes)
 
             # Compute loss and accuracy
             avg_loss += loss
             avg_acc += jnp.mean(jnp.argmax(logits, axis=1) == test_labels_int)
             num_test_batches += 1
 
-        return avg_loss / num_test_batches, avg_acc / num_test_batches
+        return avg_loss / num_test_batches, avg_acc / num_test_batches, rank / num_test_batches, effective_rank / num_test_batches, approx_rank / num_test_batches, approx_rank_abs / num_test_batches, dead_neurons / num_test_batches
 
     # ------------------------------------- For running the experiment ------------------------------------- #
     def run(self):
@@ -608,12 +615,14 @@ class IncrementalCIFARExperiment(Experiment):
         # Define loss functions
         def loss_fn_train(params, x_batch, y_batch):
             net_tmp = nnx.merge(nnx.graphdef(self.net), params)
-            logits, features = net_tmp(x_batch)[:, current_classes]
+            logits_full, features = net_tmp(x_batch)
+            logits = logits_full[:, current_classes]
             return optax.softmax_cross_entropy_with_integer_labels(logits, y_batch).mean()
 
         def loss_fn_eval(params, x_batch, y_batch):
             net_tmp = nnx.merge(nnx.graphdef(self.net), params)
-            logits, features = net_tmp(x_batch)[:, current_classes]
+            logits_full, features = net_tmp(x_batch)
+            logits = logits_full[:, current_classes]
             return optax.softmax_cross_entropy_with_integer_labels(logits, y_batch).mean()
 
         # Create HVP functions
