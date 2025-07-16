@@ -354,8 +354,14 @@ class IncrementalCIFARExperiment(Experiment):
             return loss, logits, rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons
 
         avg_loss = 0.0
-        avg_acc = 0.0
+        avg_acc  = 0.0
+        avg_rank = 0.0
+        avg_er   = 0.0
+        avg_ar   = 0.0
+        avg_ara  = 0.0
+        avg_dn   = 0.0
         num_test_batches = 0
+
         current_classes = self.all_classes[:self.current_num_classes]
 
         for batch_idx, sample in enumerate(test_data):
@@ -373,9 +379,14 @@ class IncrementalCIFARExperiment(Experiment):
             # Compute loss and accuracy
             avg_loss += loss
             avg_acc += jnp.mean(jnp.argmax(logits, axis=1) == test_labels_int)
+            avg_rank += rank
+            avg_er += effective_rank
+            avg_ar += approx_rank
+            avg_ara += approx_rank_abs
+            avg_dn += dead_neurons
             num_test_batches += 1
 
-        return avg_loss / num_test_batches, avg_acc / num_test_batches, rank / num_test_batches, effective_rank / num_test_batches, approx_rank / num_test_batches, approx_rank_abs / num_test_batches, dead_neurons / num_test_batches
+        return avg_loss / num_test_batches, avg_acc / num_test_batches, avg_rank / num_test_batches, avg_er / num_test_batches, avg_ar / num_test_batches, avg_ara / num_test_batches, avg_dn / num_test_batches
 
     # ------------------------------------- For running the experiment ------------------------------------- #
     def run(self):
