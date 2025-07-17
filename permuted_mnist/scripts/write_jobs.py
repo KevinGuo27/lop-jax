@@ -7,9 +7,7 @@ import numpy as np
 from typing import List, Iterable
 from pathlib import Path
 from itertools import product
-from permuted_mnist.utils.file_system import import_module_to_var
-
-from definitions import ROOT_DIR
+from imagenet.utils.file_system import import_module_to_var
 
 
 def generate_runs(run_dicts: List[dict],
@@ -87,15 +85,12 @@ if __name__ == "__main__":
     parser.add_argument('--local', action='store_true')
     args = parser.parse_args()
 
-    runs_dir = Path(ROOT_DIR, 'permuted_mnist', 'scripts', 'runs')
+    runs_dir = Path('/users/kguo32/rl-opt/permuted_mnist/scripts/runs')
 
     hparam_path = Path(args.hyperparam_file).resolve()
     hparams = import_module_to_var(hparam_path, 'hparams')
 
-    results_dir = Path(ROOT_DIR, 'permuted_mnist', 'results')
-    # if not args.local:
-    #     # Here we assume we want to write to the scratch directory in CC.
-    #     results_dir = Path("/home/taodav/scratch/uncertainty/results")
+    results_dir = Path('/users/kguo32/rl-opt/permuted_mnist/results')
 
     # Make our directories if it doesn't exist
     runs_dir.mkdir(parents=True, exist_ok=True)

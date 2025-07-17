@@ -48,7 +48,7 @@ class PermutedMnistHyperparams(Hyperparams):
     maturity_threshold: int = 100
 
     # wandb
-    wandb: bool = True
+    wandb: bool = False
     wandb_project: str = 'permuted_mnist'
     wandb_group: str = 'test'
     wandb_entity: str = 'rl-power'

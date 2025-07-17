@@ -12,7 +12,7 @@
 source ../../../lop/bin/activate
 
 # Specify the filename
-input_file="../runs/runs_bp.txt"
+input_file="../runs/runs_l2_er.txt"
 job_name=$(basename "$input_file" .txt) # Extract the base name of the file without extension
 
 # Read commands from the file and submit each as a separate job

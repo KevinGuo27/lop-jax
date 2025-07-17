@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_results_path(args, return_npy: bool = True):
-    results_dir = Path(ROOT_DIR, 'results')
+    results_dir = Path('/users/kguo32/rl-opt/permuted_mnist/results')
     results_dir.mkdir(exist_ok=True)
 
     args_hash = make_hash_md5(args.as_dict())

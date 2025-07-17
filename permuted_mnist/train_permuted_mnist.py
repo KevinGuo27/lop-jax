@@ -177,7 +177,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         agent = EffectiveRankAgent(network)
         
         # load data
-        data_path = Path(ROOT_DIR, 'permuted_mnist', 'data', 'mnist_')
+        data_path = Path('/users/kguo32/rl-opt/permuted_mnist/data/mnist_')
         with open(data_path, 'rb') as f:
             x_all, y_all, _, _ = np.load(f, allow_pickle=True)
         x_all = jnp.array(x_all)
@@ -312,7 +312,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 
             return runner_state, res_info
 
-        loss_list, acc_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], []
+        loss_list, acc_list, acc_pre_list, acc_eval_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], [], [], []
         update_task = jax.jit(update_task)
         if args.wandb:
             import wandb
@@ -377,6 +377,10 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             runner_state, res_info = update_task(runner_state, task)
             x_train, y_train, train_state, rng = runner_state
             rank_list.append(res_info['rank'])
+            acc_list.append(res_info['accuracy'])
+            loss_list.append(res_info['loss'])
+            acc_eval_list.append(res_info['accuracy_eval'])
+            acc_pre_list.append(res_info['accuracy_pre'])
             eff_rank_list.append(res_info['effective_rank'])
             approx_rank_list.append(res_info['approx_rank'])
             dead_neurons_list.append(res_info['dead_neurons'])
@@ -438,12 +442,20 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
 
         final_train_state = runner_state[2]
+        accuracy          = jnp.stack(acc_list)
+        accuracy_eval     = jnp.stack(acc_eval_list)
+        accuracy_pre      = jnp.stack(acc_pre_list)
+        losses            = jnp.stack(loss_list)
         ranks             = jnp.stack(rank_list)
         eff_ranks         = jnp.stack(eff_rank_list)
         approx_ranks      = jnp.stack(approx_rank_list)
         dead_neurons      = jnp.stack(dead_neurons_list)
 
         res_info = {
+            'accuracy':        accuracy,
+            'accuracy_eval':   accuracy_eval,
+            'accuracy_pre':    accuracy_pre,
+            'loss':            losses,
             'rank':            ranks,
             'effective_rank':  eff_ranks,
             'approx_rank':     approx_ranks,
