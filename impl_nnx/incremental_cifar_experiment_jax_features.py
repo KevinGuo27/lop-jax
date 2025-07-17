@@ -230,6 +230,11 @@ class IncrementalCIFARExperiment(Experiment):
             self.results_dict[set_type + "_loss_per_epoch"] = np.zeros_like(prototype_array)
             self.results_dict[set_type + "_accuracy_per_epoch"] = np.zeros_like(prototype_array)
             self.results_dict[set_type + "_evaluation_runtime"] = np.zeros_like(prototype_array)
+            self.results_dict[set_type + "_rank_per_epoch"] = np.zeros_like(prototype_array)
+            self.results_dict[set_type + "_effective_rank_per_epoch"] = np.zeros_like(prototype_array)
+            self.results_dict[set_type + "_approx_rank_per_epoch"] = np.zeros_like(prototype_array)
+            self.results_dict[set_type + "_approx_rank_abs_per_epoch"] = np.zeros_like(prototype_array)
+            self.results_dict[set_type + "_dead_neurons_per_epoch"] = np.zeros_like(prototype_array)
         self.results_dict["class_order"] = self.all_classes
 
     # ----------------------------- For saving and loading experiment checkpoints ----------------------------- #
@@ -334,11 +339,11 @@ class IncrementalCIFARExperiment(Experiment):
             self.results_dict[data_name + "_dead_neurons_per_epoch"][epoch_number] = float(dead_neurons)
 
             # print progress
-            self._print("\t\t{0} accuracy: {1:.4f}".format(data_name, accuracy))
-            self._print("\t\t{0} effective rank: {1:.4f}".format(data_name, effective_rank))
-            self._print("\t\t{0} approx rank: {1:.4f}".format(data_name, approx_rank))
-            self._print("\t\t{0} approx rank abs: {1:.4f}".format(data_name, approx_rank_abs))
-            self._print("\t\t{0} dead neurons: {1:.4f}".format(data_name, dead_neurons))
+            # self._print("\t\t{0} accuracy: {1:.4f}".format(data_name, accuracy))
+            # self._print("\t\t{0} effective rank: {1:.4f}".format(data_name, effective_rank))
+            # self._print("\t\t{0} approx rank: {1:.4f}".format(data_name, approx_rank))
+            # self._print("\t\t{0} approx rank abs: {1:.4f}".format(data_name, approx_rank_abs))
+            # self._print("\t\t{0} dead neurons: {1:.4f}".format(data_name, dead_neurons))
 
         self.net.train()
         self._print("\t\tEpoch run time in seconds: {0:.4f}".format(epoch_runtime))
@@ -384,11 +389,11 @@ class IncrementalCIFARExperiment(Experiment):
             # Compute loss and accuracy
             avg_loss += loss
             avg_acc += jnp.mean(jnp.argmax(logits, axis=1) == test_labels_int)
-            avg_rank += rank
-            avg_er += effective_rank
-            avg_ar += approx_rank
-            avg_ara += approx_rank_abs
-            avg_dn += dead_neurons
+            avg_rank += jnp.mean(rank)
+            avg_er += jnp.mean(effective_rank)
+            avg_ar += jnp.mean(approx_rank)
+            avg_ara += jnp.mean(approx_rank_abs)
+            avg_dn += jnp.mean(dead_neurons)
             num_test_batches += 1
 
         return avg_loss / num_test_batches, avg_acc / num_test_batches, avg_rank / num_test_batches, avg_er / num_test_batches, avg_ar / num_test_batches, avg_ara / num_test_batches, avg_dn / num_test_batches
@@ -556,8 +561,12 @@ class IncrementalCIFARExperiment(Experiment):
                     self._store_training_summaries()
 
             epoch_end_time = time.perf_counter()
+
+            test_summaries_start_time = time.perf_counter()
             self._store_test_summaries(test_dataloader, val_dataloader, epoch_number=self.current_epoch,
                                     epoch_runtime=epoch_end_time - epoch_start_time)
+            test_summaries_end_time = time.perf_counter()
+            self._print("\t\tTest summaries time in seconds: {0:.4f}".format(test_summaries_end_time - test_summaries_start_time))
 
             # Compute Hessian at end of task 
             if ((self.current_epoch + 1) % self.class_increase_frequency == 0 and (self.current_epoch + 1) // self.class_increase_frequency % self.compute_hessian_interval == 0):

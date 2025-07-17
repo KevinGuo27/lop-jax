@@ -2,3 +2,22 @@
   warnings.warn(
 /oscar/runtime/software/external/python/3.11.0/lib/python3.11/multiprocessing/popen_fork.py:66: RuntimeWarning: os.fork() was called. os.fork() is incompatible with multithreaded code, and JAX is multithreaded, so this will likely lead to a deadlock.
   self.pid = os.fork()
+Traceback (most recent call last):
+  File "/oscar/home/tserapio/lop-jax/impl_nnx/incremental_cifar_experiment_jax_features.py", line 847, in <module>
+    print("The running time in minutes is: {0:.2f}".format((final_time - initial_time) / 60))
+    ^^^^^^
+  File "/oscar/home/tserapio/lop-jax/impl_nnx/incremental_cifar_experiment_jax_features.py", line 840, in main
+    exp = IncrementalCIFARExperiment(experiment_parameters,
+    ^^^^^^^^^
+  File "/oscar/home/tserapio/lop-jax/impl_nnx/incremental_cifar_experiment_jax_features.py", line 407, in run
+    self.train(train_dataloader=training_dataloader, test_dataloader=test_dataloader, val_dataloader=val_dataloader,
+  File "/oscar/home/tserapio/lop-jax/impl_nnx/incremental_cifar_experiment_jax_features.py", line 559, in train
+    self._store_test_summaries(test_dataloader, val_dataloader, epoch_number=self.current_epoch,
+  File "/oscar/home/tserapio/lop-jax/impl_nnx/incremental_cifar_experiment_jax_features.py", line 330, in _store_test_summaries
+    self.results_dict[data_name + "_rank_per_epoch"][epoch_number] = float(rank)
+                                                                     ^^^^^^^^^^^
+  File "/oscar/home/tserapio/jax_cl/.venv/lib/python3.11/site-packages/jax/_src/array.py", line 296, in __float__
+    core.check_scalar_conversion(self)
+  File "/oscar/home/tserapio/jax_cl/.venv/lib/python3.11/site-packages/jax/_src/core.py", line 641, in check_scalar_conversion
+    raise TypeError("Only scalar arrays can be converted to Python scalars; "
+TypeError: Only scalar arrays can be converted to Python scalars; got arr.ndim=1

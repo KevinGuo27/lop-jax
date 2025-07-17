@@ -1,0 +1,829 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 12063508
+##  Job Name : run_incremental_cifar_bdl_l2
+##  Nodelist : gpu2102
+##      CPUs : 
+##  Mem/Node : 65536 MB
+## Directory : /oscar/home/tserapio/lop-jax/impl_nnx
+##   Job Started : Wed Jul 16 05:28:21 PM EDT 2025
+###############################################################################
+Config file successfully stored!
+JAX is using GPU: cuda:0
+   Available GPU devices: 1
+   GPU 0: cuda:0
+Saved Training Hessian spectrum to hessian/cifar_jax_july16/hessian_task_0_init_train.png
+Saved Test Hessian spectrum to hessian/cifar_jax_july16/hessian_task_0_init_test.png
+[Hessian-start] Task 0 — top-eigenvalue(train) ≈ -0.00719, top-eigenvalue(eval) ≈ -0.0764
+	Epoch number: 1
+	Current stepsize: 0.10000
+		Step Number: 25
+		Online accuracy: 0.31
+		Epoch run time in seconds: 15.0245
+	Epoch number: 2
+		Step Number: 25
+		Online accuracy: 0.42
+		Epoch run time in seconds: 1.7630
+	Epoch number: 3
+		Step Number: 25
+		Online accuracy: 0.43
+		Epoch run time in seconds: 1.6553
+	Epoch number: 4
+		Step Number: 25
+		Online accuracy: 0.47
+		Epoch run time in seconds: 1.6501
+	Epoch number: 5
+		Step Number: 25
+		Online accuracy: 0.51
+		Epoch run time in seconds: 1.6696
+	Epoch number: 6
+		Step Number: 25
+		Online accuracy: 0.53
+		Epoch run time in seconds: 1.6781
+	Epoch number: 7
+		Step Number: 25
+		Online accuracy: 0.52
+		Epoch run time in seconds: 1.9429
+	Epoch number: 8
+		Step Number: 25
+		Online accuracy: 0.58
+		Epoch run time in seconds: 1.6924
+	Epoch number: 9
+		Step Number: 25
+		Online accuracy: 0.61
+		Epoch run time in seconds: 1.9461
+	Epoch number: 10
+		Step Number: 25
+		Online accuracy: 0.67
+		Epoch run time in seconds: 1.6964
+	Epoch number: 11
+		Step Number: 25
+		Online accuracy: 0.66
+		Epoch run time in seconds: 1.6903
+	Epoch number: 12
+		Step Number: 25
+		Online accuracy: 0.67
+		Epoch run time in seconds: 1.9809
+	Epoch number: 13
+		Step Number: 25
+		Online accuracy: 0.69
+		Epoch run time in seconds: 1.7448
+	Epoch number: 14
+		Step Number: 25
+		Online accuracy: 0.73
+		Epoch run time in seconds: 1.6895
+	Epoch number: 15
+		Step Number: 25
+		Online accuracy: 0.75
+		Epoch run time in seconds: 1.7190
+	Epoch number: 16
+		Step Number: 25
+		Online accuracy: 0.75
+		Epoch run time in seconds: 1.7295
+	Epoch number: 17
+		Step Number: 25
+		Online accuracy: 0.75
+		Epoch run time in seconds: 1.6759
+	Epoch number: 18
+		Step Number: 25
+		Online accuracy: 0.74
+		Epoch run time in seconds: 1.6788
+	Epoch number: 19
+		Step Number: 25
+		Online accuracy: 0.78
+		Epoch run time in seconds: 2.0326
+	Epoch number: 20
+		Step Number: 25
+		Online accuracy: 0.79
+		Epoch run time in seconds: 1.7034
+	Epoch number: 21
+		Step Number: 25
+		Online accuracy: 0.78
+		Epoch run time in seconds: 1.6675
+	Epoch number: 22
+		Step Number: 25
+		Online accuracy: 0.80
+		Epoch run time in seconds: 1.7603
+	Epoch number: 23
+		Step Number: 25
+		Online accuracy: 0.79
+		Epoch run time in seconds: 1.7061
+	Epoch number: 24
+		Step Number: 25
+		Online accuracy: 0.81
+		Epoch run time in seconds: 1.6759
+	Epoch number: 25
+		Step Number: 25
+		Online accuracy: 0.80
+		Epoch run time in seconds: 1.6840
+	Epoch number: 26
+		Step Number: 25
+		Online accuracy: 0.81
+		Epoch run time in seconds: 1.7471
+	Epoch number: 27
+		Step Number: 25
+		Online accuracy: 0.83
+		Epoch run time in seconds: 1.9440
+	Epoch number: 28
+		Step Number: 25
+		Online accuracy: 0.83
+		Epoch run time in seconds: 1.6813
+	Epoch number: 29
+		Step Number: 25
+		Online accuracy: 0.82
+		Epoch run time in seconds: 1.9048
+	Epoch number: 30
+		Step Number: 25
+		Online accuracy: 0.84
+		Epoch run time in seconds: 1.7867
+	Epoch number: 31
+		Step Number: 25
+		Online accuracy: 0.83
+		Epoch run time in seconds: 1.7282
+	Epoch number: 32
+		Step Number: 25
+		Online accuracy: 0.83
+		Epoch run time in seconds: 1.7077
+	Epoch number: 33
+		Step Number: 25
+		Online accuracy: 0.85
+		Epoch run time in seconds: 1.7300
+	Epoch number: 34
+		Step Number: 25
+		Online accuracy: 0.85
+		Epoch run time in seconds: 1.7016
+	Epoch number: 35
+		Step Number: 25
+		Online accuracy: 0.84
+		Epoch run time in seconds: 1.6301
+	Epoch number: 36
+		Step Number: 25
+		Online accuracy: 0.87
+		Epoch run time in seconds: 1.8075
+	Epoch number: 37
+		Step Number: 25
+		Online accuracy: 0.86
+		Epoch run time in seconds: 1.7075
+	Epoch number: 38
+		Step Number: 25
+		Online accuracy: 0.87
+		Epoch run time in seconds: 2.0047
+	Epoch number: 39
+		Step Number: 25
+		Online accuracy: 0.88
+		Epoch run time in seconds: 1.6799
+	Epoch number: 40
+		Step Number: 25
+		Online accuracy: 0.86
+		Epoch run time in seconds: 1.6543
+	Epoch number: 41
+		Step Number: 25
+		Online accuracy: 0.89
+		Epoch run time in seconds: 1.7087
+	Epoch number: 42
+		Step Number: 25
+		Online accuracy: 0.87
+		Epoch run time in seconds: 1.7528
+	Epoch number: 43
+		Step Number: 25
+		Online accuracy: 0.89
+		Epoch run time in seconds: 1.9903
+	Epoch number: 44
+		Step Number: 25
+		Online accuracy: 0.88
+		Epoch run time in seconds: 1.6420
+	Epoch number: 45
+		Step Number: 25
+		Online accuracy: 0.89
+		Epoch run time in seconds: 2.0205
+	Epoch number: 46
+		Step Number: 25
+		Online accuracy: 0.88
+		Epoch run time in seconds: 1.7161
+	Epoch number: 47
+		Step Number: 25
+		Online accuracy: 0.89
+		Epoch run time in seconds: 1.7986
+	Epoch number: 48
+		Step Number: 25
+		Online accuracy: 0.89
+		Epoch run time in seconds: 1.7907
+	Epoch number: 49
+		Step Number: 25
+		Online accuracy: 0.91
+		Epoch run time in seconds: 1.7237
+	Epoch number: 50
+		Step Number: 25
+		Online accuracy: 0.91
+		Epoch run time in seconds: 1.6694
+	Epoch number: 51
+		Step Number: 25
+		Online accuracy: 0.91
+		Epoch run time in seconds: 1.6277
+	Epoch number: 52
+		Step Number: 25
+		Online accuracy: 0.91
+		Epoch run time in seconds: 1.6727
+	Epoch number: 53
+		Step Number: 25
+		Online accuracy: 0.92
+		Epoch run time in seconds: 1.7578
+	Epoch number: 54
+		Step Number: 25
+		Online accuracy: 0.92
+		Epoch run time in seconds: 1.7441
+	Epoch number: 55
+		Step Number: 25
+		Online accuracy: 0.91
+		Epoch run time in seconds: 1.6938
+	Epoch number: 56
+		Step Number: 25
+		Online accuracy: 0.92
+		Epoch run time in seconds: 1.7286
+	Epoch number: 57
+		Step Number: 25
+		Online accuracy: 0.91
+		Epoch run time in seconds: 1.7188
+	Epoch number: 58
+		Step Number: 25
+		Online accuracy: 0.93
+		Epoch run time in seconds: 1.6592
+	Epoch number: 59
+		Step Number: 25
+		Online accuracy: 0.92
+		Epoch run time in seconds: 1.7933
+	Epoch number: 60
+		Step Number: 25
+		Online accuracy: 0.93
+		Epoch run time in seconds: 1.7140
+	Epoch number: 61
+	Current stepsize: 0.02000
+		Step Number: 25
+		Online accuracy: 0.95
+		Epoch run time in seconds: 7.0763
+	Epoch number: 62
+		Step Number: 25
+		Online accuracy: 0.97
+		Epoch run time in seconds: 2.0121
+	Epoch number: 63
+		Step Number: 25
+		Online accuracy: 0.97
+		Epoch run time in seconds: 1.6383
+	Epoch number: 64
+		Step Number: 25
+		Online accuracy: 0.98
+		Epoch run time in seconds: 2.0134
+	Epoch number: 65
+		Step Number: 25
+		Online accuracy: 0.98
+		Epoch run time in seconds: 1.6928
+	Epoch number: 66
+		Step Number: 25
+		Online accuracy: 0.98
+		Epoch run time in seconds: 1.6694
+	Epoch number: 67
+		Step Number: 25
+		Online accuracy: 0.98
+		Epoch run time in seconds: 1.7613
+	Epoch number: 68
+		Step Number: 25
+		Online accuracy: 0.98
+		Epoch run time in seconds: 2.0214
+	Epoch number: 69
+		Step Number: 25
+		Online accuracy: 0.98
+		Epoch run time in seconds: 1.7197
+	Epoch number: 70
+		Step Number: 25
+		Online accuracy: 0.98
+		Epoch run time in seconds: 2.1294
+	Epoch number: 71
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7043
+	Epoch number: 72
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.9865
+	Epoch number: 73
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7291
+	Epoch number: 74
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.9862
+	Epoch number: 75
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7158
+	Epoch number: 76
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7545
+	Epoch number: 77
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.6906
+	Epoch number: 78
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.8821
+	Epoch number: 79
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7236
+	Epoch number: 80
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7497
+	Epoch number: 81
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7562
+	Epoch number: 82
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.9944
+	Epoch number: 83
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 2.0193
+	Epoch number: 84
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7601
+	Epoch number: 85
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 2.0924
+	Epoch number: 86
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7210
+	Epoch number: 87
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7901
+	Epoch number: 88
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.6844
+	Epoch number: 89
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7179
+	Epoch number: 90
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7588
+	Epoch number: 91
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7394
+	Epoch number: 92
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.6636
+	Epoch number: 93
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7794
+	Epoch number: 94
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8026
+	Epoch number: 95
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7556
+	Epoch number: 96
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7230
+	Epoch number: 97
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.6846
+	Epoch number: 98
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 2.0245
+	Epoch number: 99
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7615
+	Epoch number: 100
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 2.1393
+	Epoch number: 101
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7847
+	Epoch number: 102
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.8662
+	Epoch number: 103
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7784
+	Epoch number: 104
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.0135
+	Epoch number: 105
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8858
+	Epoch number: 106
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.9793
+	Epoch number: 107
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7746
+	Epoch number: 108
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7285
+	Epoch number: 109
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8201
+	Epoch number: 110
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7525
+	Epoch number: 111
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.6574
+	Epoch number: 112
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7503
+	Epoch number: 113
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.0830
+	Epoch number: 114
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7077
+	Epoch number: 115
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.6542
+	Epoch number: 116
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.9926
+	Epoch number: 117
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.2655
+	Epoch number: 118
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 1.7323
+	Epoch number: 119
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7303
+	Epoch number: 120
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7196
+	Epoch number: 121
+	Current stepsize: 0.00400
+		Step Number: 25
+		Online accuracy: 0.99
+		Epoch run time in seconds: 7.3297
+	Epoch number: 122
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7217
+	Epoch number: 123
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7234
+	Epoch number: 124
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7010
+	Epoch number: 125
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.6940
+	Epoch number: 126
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7091
+	Epoch number: 127
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.6417
+	Epoch number: 128
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7227
+	Epoch number: 129
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7471
+	Epoch number: 130
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7276
+	Epoch number: 131
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7105
+	Epoch number: 132
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7417
+	Epoch number: 133
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.0651
+	Epoch number: 134
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7226
+	Epoch number: 135
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.0630
+	Epoch number: 136
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.6704
+	Epoch number: 137
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7280
+	Epoch number: 138
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7455
+	Epoch number: 139
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7189
+	Epoch number: 140
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.6654
+	Epoch number: 141
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7028
+	Epoch number: 142
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.0617
+	Epoch number: 143
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7242
+	Epoch number: 144
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7567
+	Epoch number: 145
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7052
+	Epoch number: 146
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7095
+	Epoch number: 147
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7055
+	Epoch number: 148
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7488
+	Epoch number: 149
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.0445
+	Epoch number: 150
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7114
+	Epoch number: 151
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7707
+	Epoch number: 152
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.6883
+	Epoch number: 153
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7402
+	Epoch number: 154
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.1026
+	Epoch number: 155
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7212
+	Epoch number: 156
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.6957
+	Epoch number: 157
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7213
+	Epoch number: 158
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7034
+	Epoch number: 159
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7085
+	Epoch number: 160
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7450
+	Epoch number: 161
+	Current stepsize: 0.00080
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 7.3849
+	Epoch number: 162
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7060
+	Epoch number: 163
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.0504
+	Epoch number: 164
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7331
+	Epoch number: 165
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7446
+	Epoch number: 166
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7811
+	Epoch number: 167
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8115
+	Epoch number: 168
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.4132
+	Epoch number: 169
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8069
+	Epoch number: 170
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8205
+	Epoch number: 171
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8309
+	Epoch number: 172
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8411
+	Epoch number: 173
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.5688
+	Epoch number: 174
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8094
+	Epoch number: 175
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8565
+	Epoch number: 176
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8404
+	Epoch number: 177
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8363
+	Epoch number: 178
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.4228
+	Epoch number: 179
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7982
+	Epoch number: 180
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8093
+	Epoch number: 181
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8338
+	Epoch number: 182
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8063
+	Epoch number: 183
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.4891
+	Epoch number: 184
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8169
+	Epoch number: 185
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7946
+	Epoch number: 186
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.4979
+	Epoch number: 187
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8632
+	Epoch number: 188
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8382
+	Epoch number: 189
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8279
+	Epoch number: 190
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.9131
+	Epoch number: 191
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 2.6282
+	Epoch number: 192
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8369
+	Epoch number: 193
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8839
+	Epoch number: 194
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8698
+	Epoch number: 195
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8333
+	Epoch number: 196
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8389
+	Epoch number: 197
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8390
+	Epoch number: 198
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8611
+	Epoch number: 199
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.7762
+	Epoch number: 200
+		Step Number: 25
+		Online accuracy: 1.00
+		Epoch run time in seconds: 1.8446
+Saved Training Hessian spectrum to hessian/cifar_jax_july16/hessian_task_0_end_train.png
+Saved Test Hessian spectrum to hessian/cifar_jax_july16/hessian_task_0_end_test.png
+[Hessian-end] Task 0 — top-eigenvalue(train) ≈ 0.00066, top-eigenvalue(eval) ≈ -0.00132
+Best accuracy in the task: 0.9000
+	New class added...
+	Current classes: 10/100
+Saved Training Hessian spectrum to hessian/cifar_jax_july16/hessian_task_1_init_train.png
+Saved Test Hessian spectrum to hessian/cifar_jax_july16/hessian_task_1_init_test.png
+[Hessian-start] Task 1 — top-eigenvalue(train) ≈ -0.00501, top-eigenvalue(eval) ≈ -0.00994
