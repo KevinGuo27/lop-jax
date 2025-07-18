@@ -44,15 +44,15 @@ class BaseDLAgent:
 
 # Effective Rank L2 Agent
 
+def effective_rank(features, eps=1e-8):
+    s = jnp.linalg.svdvals(features.T)
+    s = jnp.abs(s)
+    p = s / jnp.maximum(s.sum(), eps)
+    entropy = -(p * jnp.log(p + eps)).sum()
+    return jnp.exp(entropy)
+
 @nnx.jit
 def er_only_loss(model, imgs, labels_int, current_classes):
-    def effective_rank(features, eps=1e-8):
-        s = jnp.linalg.svdvals(features.T)
-        s = jnp.abs(s)
-        p = s / jnp.maximum(s.sum(), eps)
-        entropy = -(p * jnp.log(p + eps)).sum()
-        return jnp.exp(entropy)
-    
     logits_full, features = model(imgs, feature_list=[])
     logits = logits_full[:, current_classes]
 
