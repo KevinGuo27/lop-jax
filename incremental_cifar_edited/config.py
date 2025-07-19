@@ -71,9 +71,9 @@ class IncrementalCIFARHyperparams(Hyperparams):
     perturb_scale: int = 1e-5
     num_hidden_layers: int = 3
     mini_batch_size: int = 1
-    no_anneal_lr: bool = True
+    no_anneal_lr: bool = False # set to false - rich's code uses SGD
     max_grad_norm: float = 0.5
-    num_tasks: int = 800  # Number of tasks in the permuted MNIST
+    num_tasks: int = 20  # Number of tasks in the incremental CIFAR
 
     # Effective Rank
     er_lr: list[float] = [0.01]

@@ -15,14 +15,14 @@ from flax.training.train_state import TrainState
 import optax
 import orbax.checkpoint
 
-from pobax.envs import get_env
-from pobax.models import get_gymnax_network_fn
+# from pobax.envs import get_env
+# from pobax.models import get_gymnax_network_fn
 from pobax.config import Hyperparams
 
-from definitions import ROOT_DIR
+# from definitions import ROOT_DIR
 
 
-def get_results_path(args: Hyperparams, return_npy: bool = True):
+def get_results_path(args, return_npy: bool = True):
     results_dir = Path(ROOT_DIR, 'results')
     results_dir.mkdir(exist_ok=True)
 

@@ -7,27 +7,72 @@ import jax.numpy as jnp
 from flax import linen as nn
 from pathlib import Path
 import chex
-from permuted_mnist.config import PermutedMnistHyperparams
-from permuted_mnist.utils.evaluation import summarize_all_layers
+from config import IncrementalCIFARHyperparams
+from utils.evaluation import summarize_all_layers
 import optax
 from flax.training import train_state
 from flax.training.train_state import TrainState
 from flax.training import orbax_utils
-from permuted_mnist.utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
+from utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
 import orbax.checkpoint
-from permuted_mnist.utils.optimizer import l2_regularization, adam_with_param_counts
-from permuted_mnist.utils.hessian_computation import get_hvp_fn
-from permuted_mnist.utils.lanczos import lanczos_alg
-from definitions import ROOT_DIR
-from permuted_mnist.utils.density import tridiag_to_density, tridiag_to_density_and_erank
-from permuted_mnist.cbp import ContinualBackpropTrainState
+from utils.optimizer import l2_regularization, adam_with_param_counts
+from utils.hessian_computation import get_hvp_fn
+from utils.lanczos import lanczos_alg
+# from definitions import ROOT_DIR
+from utils.density import tridiag_to_density, tridiag_to_density_and_erank
+from cbp import ContinualBackpropTrainState
 
 from modified_resnet_linen import build_resnet18
 from typing import Any
 
+from mlproj_manager.problems import CifarDataSet
+from torchvision import transforms
+from torch.utils.data import DataLoader, Subset
+
 # create train state as we are using ResNet with BatchNorm
 class TrainState(train_state.TrainState):
     batch_stats: Any
+
+# helpers for data loading and splitting
+def stratified_split(labels: np.ndarray, val_fraction: float) -> (list, list):
+    """
+    Perform a stratified train/validation split on an array of integer labels.
+
+    Args:
+        labels (np.ndarray of shape (N,)): integer class labels for N samples.
+        val_fraction (float): fraction of each class to reserve for validation (0 <= f < 1).
+
+    Returns:
+        train_idx (list[int]): indices of samples assigned to the training set.
+        val_idx   (list[int]): indices of samples assigned to the validation set.
+
+    For each unique class in `labels`, this function:
+      1. Gathers all indices of that class.
+      2. Shuffles them randomly.
+      3. Allocates the first `int(len(cls_inds) * val_fraction)` indices to validation,
+         and the remainder to training.
+    """
+    train_idx, val_idx = [], []
+    for cls_ in np.unique(labels):
+        cls_inds = np.where(labels == cls_)[0]
+        np.random.shuffle(cls_inds)
+        n_val = int(len(cls_inds) * val_fraction)
+        val_idx.extend(cls_inds[:n_val])
+        train_idx.extend(cls_inds[n_val:])
+    return train_idx, val_idx
+
+
+def loader_to_arrays(loader: DataLoader):
+    """
+    Concatenate all batches from a DataLoader into JAX arrays.
+    """
+    xs, ys = [], []
+    for batch in loader:
+        x = batch['image']
+        y = batch['label']
+        xs.append(x)
+        ys.append(y)
+    return jnp.array(np.concatenate(xs, axis=0)), jnp.array(np.concatenate(ys, axis=0))
 
 def compute_param_norms(params):
     """Compute L1, L2, and L∞ norms of parameters"""
@@ -105,11 +150,14 @@ def perturb_params(params, rng, scale):
     return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
 
 def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
+
     network = build_resnet18(num_classes=100)
     num_tasks = args.num_tasks
     images_per_class = 500
-    classes_per_task = 5
+    classes_per_task = 100 # since we're doing non-incremental CIFAR for now
     examples_per_task = images_per_class * classes_per_task
+    all_classes = np.random.permutation(100)
+
     def linear_schedule(count):
         frac = (
             1.0
@@ -119,16 +167,71 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
         return args.lr * frac
     def train(lr, er_lr, rng):
         agent = EffectiveRankAgent(network)
-        
-        # load data
+
+        # Load train, eval, and test datasets in the train function
+
+        transform_train = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor()
+        ])
+
         data_path = Path('/users/tserapio/lop-jax/incremental_cifar_edited/data/cifar-100-python')
-        with open(data_path, 'rb') as f:
-            x_all, y_all, _, _ = np.load(f, allow_pickle=True)
-        x_all = jnp.array(x_all)
-        y_all = jnp.array(y_all)
-        
+        dataset = CifarDataSet(
+            root_dir=data_path,
+            train=True,
+            cifar_type=100,
+            classes=None,
+            device=None,
+            image_normalization="max",
+            label_preprocessing=None,
+            use_torch=False,
+            flatten=False
+        )
+        dataset.set_transformation(lambda sample: {
+            'image': transform_train(sample['image']),
+            'label': sample['label']
+        })
+
+        full_labels = np.array(dataset.integer_labels)
+        train_idx, val_idx = stratified_split(full_labels, val_fraction=0.1)
+        train_subset = Subset(dataset, train_idx)
+        val_subset   = Subset(dataset, val_idx)
+
+        train_loader = DataLoader(train_subset,
+                                  batch_size=90,
+                                  shuffle=True,
+                                  num_workers=4)
+        val_loader   = DataLoader(val_subset,
+                                  batch_size=50,
+                                  shuffle=False,
+                                  num_workers=4)
+
+        test_dataset = CifarDataSet(
+            root_dir=args.data_path,
+            train=False,
+            cifar_type=100,
+            classes=None,
+            device=None,
+            image_normalization="max",
+            label_preprocessing=None,
+            use_torch=False,
+            flatten=False
+        )
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=100,
+                                 shuffle=False,
+                                 num_workers=4)
+
+        # data for all 100 classes already split into train/val/test
+        x_train, y_train = loader_to_arrays(train_loader)
+        x_val, y_val = loader_to_arrays(val_loader)
+        x_test, y_test = loader_to_arrays(test_loader)
+        x_all, y_all = jnp.concatenate([x_train, x_val, x_test], axis=0), jnp.concatenate([y_train, y_val, y_test], axis=0)
+
         # init network
-        variables = network.init(rng, x_all[:1], train=True)
+        variables = network.init(rng, x_train[:1], train=True)
         network_params = variables['params']
         batch_stats = variables['batch_stats']
 
@@ -141,7 +244,8 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             else:
                 tx = optax.chain(
                     optax.add_decayed_weights(args.weight_decay),
-                    optax.sgd(learning_rate=lr)
+                    optax.sgd(learning_rate=lr, momentum=0.9, nesterov=False) 
+                    # TODO: change learning rate to a schedule
                 )
         if args.cont_backprop: # no need to look here first 
             train_state = ContinualBackpropTrainState.create(
@@ -199,12 +303,15 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     return (x, y, train_state, rng), (loss, accuracy)
                         
                 x, y, train_state, rng = runner_state
+                
                 batch_x = jax.lax.dynamic_slice_in_dim(x, batch_idx, args.mini_batch_size * args.er_batch, axis=0)
                 batch_y = jax.lax.dynamic_slice_in_dim(y, batch_idx, args.mini_batch_size * args.er_batch, axis=0)
+                
                 accuracy_runner_state = (batch_x, batch_y, train_state, rng)
                 accuracy_runner_state, (loss, accuracy) = jax.lax.scan(update_accuracy, accuracy_runner_state, jnp.arange(0, args.er_batch * args.mini_batch_size, args.mini_batch_size), args.er_batch)
                 train_state = accuracy_runner_state[2]
 
+                # haven't touched this part yet
                 def update_erank(runner_state, _):
                     x, train_state, rng = runner_state
                     er_loss = agent.effective_rank_loss(train_state.params, x)
@@ -279,23 +386,26 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             name = f"{args.agent}_{args.activation}_{args.lr}_{args.er_lr}_{args.er_batch}_{args.er_step}_{args.num_features}_{args.num_hidden_layers}_{args.num_tasks}_{args.mini_batch_size}_{args.er_batch}_{args.er_step}"
             wandb.init(project=args.wandb_project, name=name, entity=args.wandb_entity, group=args.wandb_group)
             wandb.config.update(args)
+        
+        # per task 
         for task in range(num_tasks):
-            eval_size = args.eval_size
-            train_size = examples_per_task - eval_size
-            # Record the previous train set
-            train_previous = (x_all[train_size:], y_all[train_size:])
-            # permuted dataset
-            rng, _rng = jax.random.split(rng)
-            pixel_permutation = jax.random.permutation(rng, input_size)
-            x_all = x_all[:, pixel_permutation]
-            # Shuffle the data for the current task
-            rng, _rng = jax.random.split(rng)
-            data_permutation = jax.random.permutation(rng, examples_per_task)
-            x_shuffled, y_shuffled = x_all[data_permutation], y_all[data_permutation]
+            # commented out because we already loaded train/val/test 
+            # eval_size = args.eval_size
+            # train_size = examples_per_task - eval_size
+            # # Record the previous train set
+            # train_previous = (x_all[train_size:], y_all[train_size:])
+            # # permuted dataset
+            # rng, _rng = jax.random.split(rng)
+            # pixel_permutation = jax.random.permutation(rng, input_size)
+            # x_all = x_all[:, pixel_permutation]
+            # # Shuffle the data for the current task
+            # rng, _rng = jax.random.split(rng)
+            # data_permutation = jax.random.permutation(rng, examples_per_task)
+            # x_shuffled, y_shuffled = x_all[data_permutation], y_all[data_permutation]
 
-            # Split into train and eval sets
-            x_train, y_train = x_shuffled[:train_size], y_shuffled[:train_size]
-            x_eval, y_eval = x_shuffled[train_size:], y_shuffled[train_size:]
+            # # Split into train and eval sets
+            # x_train, y_train = x_shuffled[:train_size], y_shuffled[:train_size]
+            # x_eval, y_eval = x_shuffled[train_size:], y_shuffled[train_size:]
 
             #compute hessian at the start of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
@@ -423,10 +533,11 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             'train_state':     final_train_state
         }
         return res_info
+
     return train
 
 if __name__ == "__main__":
-    args = PermutedMnistHyperparams().parse_args()
+    args = IncrementalCIFARHyperparams().parse_args()
     jax.config.update('jax_platform_name', args.platform)
 
     rng = jax.random.PRNGKey(args.seed)

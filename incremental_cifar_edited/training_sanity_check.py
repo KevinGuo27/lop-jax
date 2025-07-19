@@ -14,6 +14,7 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
+# scroll down for sanity check
 
 class SequentialWithKW(nn.Module):
     layers: Sequence[nn.Module]
@@ -151,3 +152,21 @@ from flax.training import orbax_utils
 
 class TrainState(train_state.TrainState):
     batch_stats: Any
+
+# TRAINING SANITY CHECK
+model = build_resnet18(num_classes=100)
+variables = model.init(jax.random.PRNGKey(0), jnp.ones((1, 32, 32, 3)), train=True)
+state = TrainState.create(
+    apply_fn=model.apply, 
+    params=variables['params'], 
+    batch_stats=variables['batch_stats'],
+    tx=optax.sgd(learning_rate=0.1, momentum=0.9)
+)
+
+print(type(state))
+
+(output, features), updates = state.apply_fn(variables, x=jnp.ones((1, 32, 32, 3)), train=True, mutable='batch_stats')
+print(type(output)) # this is the logits
+print(type(features)) # this is the list of features
+print(len(features)) # this is the list of features
+print(updates.keys()) # there should be 'batch_stats' key
