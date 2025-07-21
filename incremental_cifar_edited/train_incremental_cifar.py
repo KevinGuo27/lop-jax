@@ -33,6 +33,26 @@ from torch.utils.data import DataLoader, Subset
 class TrainState(train_state.TrainState):
     batch_stats: Any
 
+def augment_image(image, rng):
+    """Applies padding, random crop and horizontal flip."""
+    # Pad the image (4 pixels on each side) → (40, 40, 3)
+    padded = jnp.pad(image, ((4, 4), (4, 4), (0, 0)), mode='reflect')
+    
+    # Random crop
+    crop_rng, flip_rng = jax.random.split(rng)
+    crop_x_rng, crop_y_rng = jax.random.split(crop_rng)
+    crop_x = jax.random.randint(crop_x_rng, (), 0, 9)  
+    crop_y = jax.random.randint(crop_y_rng, (), 0, 9)
+    cropped = lax.dynamic_slice(padded, (crop_x, crop_y, 0), (32, 32, 3))
+
+    # Horizontal flip
+    do_flip = jax.random.bernoulli(flip_rng)
+    flipped = jnp.where(do_flip, jnp.flip(cropped, axis=1), cropped)
+
+    return flipped
+
+batched_augment = jax.jit(jax.vmap(augment_image, in_axes=(0, 0)))
+
 # helpers for data loading and splitting
 def stratified_split(labels: np.ndarray, val_fraction: float) -> (list, list):
     """
@@ -157,6 +177,26 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
     classes_per_task = 100 # since we're doing non-incremental CIFAR for now
     examples_per_task = images_per_class * classes_per_task
     all_classes = np.random.permutation(100)
+    
+    def make_lr_scheduler(num_tasks: int,
+                        base_lr: float,
+                        base_steps_per_epoch: int,
+                        epochs_per_task: int,
+                        drop_factor: float = 0.2,
+                        drop_epochs: tuple = (60, 120, 160)):
+        boundaries_and_scales = {}
+        cum_steps = 0
+        for t in range(1, num_tasks + 1):
+            S = base_steps_per_epoch * t
+            for e in drop_epochs:
+                boundary = cum_steps + S * e
+                boundaries_and_scales[boundary] = drop_factor
+            cum_steps += epochs_per_task * S
+
+        return optax.piecewise_constant_schedule(
+            init_value=base_lr,
+            boundaries_and_scales=boundaries_and_scales,
+        )
 
     def linear_schedule(count):
         frac = (
@@ -194,17 +234,19 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             'label': sample['label']
         })
 
+        batch_sizes = {'train': 90, 'val': 50, 'test': 100}
+
         full_labels = np.array(dataset.integer_labels)
         train_idx, val_idx = stratified_split(full_labels, val_fraction=0.1)
         train_subset = Subset(dataset, train_idx)
         val_subset   = Subset(dataset, val_idx)
 
         train_loader = DataLoader(train_subset,
-                                  batch_size=90,
+                                  batch_size=batch_sizes['train'],
                                   shuffle=True,
                                   num_workers=4)
         val_loader   = DataLoader(val_subset,
-                                  batch_size=50,
+                                  batch_size=batch_sizes['val'],
                                   shuffle=False,
                                   num_workers=4)
 
@@ -220,13 +262,16 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             flatten=False
         )
         test_loader = DataLoader(test_dataset,
-                                 batch_size=100,
+                                 batch_size=batch_sizes['test'],
                                  shuffle=False,
                                  num_workers=4)
 
         # data for all 100 classes already split into train/val/test
         x_train, y_train = loader_to_arrays(train_loader)
+        x_train = batched_augment(x_train, jax.random.split(rng, x_train.shape[0]))
+        
         x_val, y_val = loader_to_arrays(val_loader)
+        
         x_test, y_test = loader_to_arrays(test_loader)
         x_all, y_all = jnp.concatenate([x_train, x_val, x_test], axis=0), jnp.concatenate([y_train, y_val, y_test], axis=0)
 
@@ -234,6 +279,15 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
         variables = network.init(rng, x_train[:1], train=True)
         network_params = variables['params']
         batch_stats = variables['batch_stats']
+
+        lr_schedule = make_lr_scheduler(
+            num_tasks = args.num_tasks, #20 for incremental cifar-100
+            base_lr = args.lr, #0.1 for incremental cifar-100
+            base_steps_per_epoch = 25,
+            epochs_per_task = 200,
+            drop_factor = 0.2,
+            drop_epochs = (60, 120, 160),
+        )
 
         if args.no_anneal_lr:
             if args.optimizer == 'adam':
@@ -244,8 +298,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             else:
                 tx = optax.chain(
                     optax.add_decayed_weights(args.weight_decay),
-                    optax.sgd(learning_rate=lr, momentum=0.9, nesterov=False) 
-                    # TODO: change learning rate to a schedule
+                    optax.sgd(learning_rate=lr_schedule, momentum=0.9, nesterov=False) 
                 )
         if args.cont_backprop: # no need to look here first 
             train_state = ContinualBackpropTrainState.create(
