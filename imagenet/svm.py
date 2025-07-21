@@ -31,7 +31,7 @@ def main(args):
         class_order = class_order[0]
     for task in range(args.task_init, args.task_end):
         x_train, y_train, x_eval, y_eval = load_imagenet(class_order[task*classes_per_task:(task+1)*classes_per_task])
-        model = svm.SVC(kernel='linear', probability=True)
+        model = svm.SVC(kernel='rbf', probability=True)
         model.fit(x_train, y_train)
         # evaluate the model
         acc = model.score(x_eval, y_eval)

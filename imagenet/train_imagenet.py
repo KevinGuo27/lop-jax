@@ -6,10 +6,10 @@ from time import time
 import optax
 import numpy as np
 from tqdm import tqdm
-from models import ConvNet
+from imagenet.models import ConvNet
 from pathlib import Path
 from collections import deque
-from utils.evaluation import summarize_all_layers
+from imagenet.utils.evaluation import summarize_all_layers
 import optax
 from flax.training.train_state import TrainState
 from flax.training import orbax_utils
@@ -17,14 +17,14 @@ import inspect
 import chex
 import jax
 import jax.numpy as jnp
-from config import ImagenetHyperparams
-from utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
+from imagenet.config import ImagenetHyperparams
+from imagenet.utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
 import orbax.checkpoint
-from utils.optimizer import l2_regularization, adam_with_param_counts
-from utils.hessian_computation import get_hvp_fn
-from utils.lanczos import lanczos_alg
-from utils.density import tridiag_to_density, tridiag_to_density_and_erank
-from cbp import ContinualBackpropTrainState
+from imagenet.utils.optimizer import l2_regularization, adam_with_param_counts
+from imagenet.utils.hessian_computation import get_hvp_fn
+from imagenet.utils.lanczos import lanczos_alg
+from imagenet.utils.density import tridiag_to_density, tridiag_to_density_and_erank
+from imagenet.cbp import ContinualBackpropTrainState
 
 class EffectiveRankAgent:
     def __init__(self, network: ConvNet):
@@ -47,6 +47,7 @@ class EffectiveRankAgent:
     def effective_rank_loss(self, params, x):
         output, features = self.network.apply(params, x)
         erank_losses = [self.effective_rank(f) for f in features.values() if f is not None]
+        erank_losses = erank_losses[-2:]  # Only take the last two layers for rank computation
         loss_erank = - jnp.stack(erank_losses).mean()
         return loss_erank
 
@@ -105,7 +106,11 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
         return args.lr * frac
     with open('/users/kguo32/rl-opt/imagenet/class_order', 'rb+') as f:
         class_order = pickle.load(f)
-        class_order = class_order[0]
+        # randomly choose a number from 0-300
+        rng, _rng = jax.random.split(rng)
+        class_idx = jax.random.randint(_rng, (), 0, len(class_order))
+        class_order = class_order[int(class_idx)]
+
     def train(lr, er_lr, rng):
         agent = EffectiveRankAgent(network)
         dummy_input = jnp.ones([1, 32, 32, 3])
@@ -161,14 +166,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
                                                                     decay_rate=args.decay_rate,
                                                                     maturity_threshold=args.maturity_threshold)
                     return (x, y, train_state, rng), (loss, accuracy)
-                        
-                x, y, train_state, rng = runner_state
-                batch_x = jax.lax.dynamic_slice_in_dim(x, batch_idx, args.mini_batch_size * args.er_batch, axis=0)
-                batch_y = jax.lax.dynamic_slice_in_dim(y, batch_idx, args.mini_batch_size * args.er_batch, axis=0)
-                accuracy_runner_state = (batch_x, batch_y, train_state, rng)
-                accuracy_runner_state, (loss, accuracy) = jax.lax.scan(update_accuracy, accuracy_runner_state, jnp.arange(0, args.er_batch * args.mini_batch_size, args.mini_batch_size), args.er_batch)
-                train_state = accuracy_runner_state[2]
-
+                
                 def update_erank(runner_state, _):
                     x, train_state, rng = runner_state
                     er_loss = agent.effective_rank_loss(train_state.params, x)
@@ -177,12 +175,17 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
                     new_params = optax.apply_updates(train_state.params, updates)
                     train_state = train_state.replace(params=new_params)
                     return (x, train_state, rng), er_loss
-
+                        
+                x, y, train_state, rng = runner_state                
+                batch_x = jax.lax.dynamic_slice_in_dim(x, batch_idx, args.mini_batch_size * args.er_batch, axis=0)
+                batch_y = jax.lax.dynamic_slice_in_dim(y, batch_idx, args.mini_batch_size * args.er_batch, axis=0)
                 if args.agent in ['er', 'l2_er']:
                     er_runner_state = (batch_x, train_state, rng)
                     er_runner_state, er_loss = jax.lax.scan(update_erank, er_runner_state, None, args.er_step)
                     train_state = er_runner_state[1]
-                
+                accuracy_runner_state = (batch_x, batch_y, train_state, rng)
+                accuracy_runner_state, (loss, accuracy) = jax.lax.scan(update_accuracy, accuracy_runner_state, jnp.arange(0, args.er_batch * args.mini_batch_size, args.mini_batch_size), args.er_batch)
+                train_state = accuracy_runner_state[2]                
                 runner_state = (x, y, train_state, rng)
                 return runner_state, (loss, accuracy)
 
@@ -199,6 +202,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
             # Evaluate the model on the current task
             output, features = agent.predict(train_state.params, x_eval)
             features_list = [f for f in features.values() if f is not None]
+            features_list = features_list[-2:] # Only take the last two layers for rank computation
             rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
             pred_labels = jnp.argmax(output, axis=-1)
             accuracy_eval = jnp.mean(pred_labels == y_eval)
@@ -222,7 +226,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
                 
             return runner_state, res_info
 
-        loss_list, acc_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], []
+        loss_list, acc_list, acc_eval_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], [], []
         update_task = jax.jit(update_task)
         for task in range(num_tasks):
             x_train, y_train, x_eval, y_eval = load_imagenet(class_order[task*classes_per_task:(task+1)*classes_per_task])
@@ -275,6 +279,9 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
             eff_rank_list.append(res_info['effective_rank'])
             approx_rank_list.append(res_info['approx_rank'])
             dead_neurons_list.append(res_info['dead_neurons'])
+            acc_list.append(res_info['accuracy'])
+            acc_eval_list.append(res_info['accuracy_eval'])
+            loss_list.append(res_info['loss'])
 
             #compute hessian at the end of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
@@ -310,13 +317,19 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
         eff_ranks         = jnp.stack(eff_rank_list)
         approx_ranks      = jnp.stack(approx_rank_list)
         dead_neurons      = jnp.stack(dead_neurons_list)
+        acc               = jnp.stack(acc_list)
+        acc_eval          = jnp.stack(acc_eval_list)
+        loss              = jnp.stack(loss_list)
 
         res_info = {
             'rank':            ranks,
             'effective_rank':  eff_ranks,
             'approx_rank':     approx_ranks,
             'dead_neurons':    dead_neurons,
-            'train_state':     final_train_state
+            'train_state':     final_train_state,
+            'accuracy':        acc,
+            'accuracy_eval':   acc_eval,
+            'loss':            loss,
         }
         return res_info
     return train

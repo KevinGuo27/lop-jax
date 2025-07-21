@@ -27,9 +27,12 @@ class ImagenetHyperparams(Hyperparams):
     num_epochs: int = 250
     momentum: float = 0.9
     # Effective Rank
-    er_lr: list[float] = [0.001]
+    er_lr: list[float] = [0.01]
     er_batch: int = 1
     er_step: int = 1
+
+    # SVM
+    svm: bool = False
 
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?

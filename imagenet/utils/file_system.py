@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_results_path(args, return_npy: bool = True):
-    results_dir = Path(ROOT_DIR, 'results')
+    results_dir = Path('/users/kguo32/rl-opt/imagenet/results')
     results_dir.mkdir(exist_ok=True)
 
     args_hash = make_hash_md5(args.as_dict())
@@ -155,7 +155,7 @@ def plot_hessian_spectrum(grids_train, density_train, grids_test, density_test, 
     plt.semilogy(grids_np_train, density_np_train, label=f'Task {task_num} train', color='blue')
     plt.semilogy(grids_np_test, density_np_test, label=f'Task {task_num} test', color='orange')
     plt.ylim(1e-10, 1e2)
-    plt.xlim(-10, 50)
+    plt.xlim(-100, 1000)
     plt.ylabel("Density")
     plt.xlabel("Eigenvalue")
     plt.title(f"Hessian Spectrum {agent_name} - Task {task_num}_{'init' if at_init else 'end'}")

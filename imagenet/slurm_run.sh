@@ -13,4 +13,5 @@ module load cuda cudnn
 module load python/3.11.0s-ixrhc3q
 source ~/pobax_baseline/bin/activate
 # run
-python train_imagenet.py --debug --agent bp --weight_decay 0.0 --num_tasks 100 --compute_hessian --compute_hessian_interval 10 --compute_hessian_size 2000
+# python train_imagenet.py --debug --agent l2_er --num_tasks 100 --lr 0.01 --weight_decay 1e-4 --er_lr 0.001 --er_batch 12 --compute_hessian --compute_hessian_interval 10 --compute_hessian_size 2000
+python train_imagenet.py --debug --agent bp --num_tasks 100 --lr 0.01 --weight_decay 0.0
