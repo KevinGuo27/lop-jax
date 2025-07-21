@@ -136,18 +136,3 @@ class ResNet18(nn.Module):
 
 def build_resnet18(num_classes: int) -> ResNet18:
     return ResNet18(num_classes=num_classes)
-
-
-
-
-
-
-
-# SANITY CHECK
-from flax.training import train_state
-import optax
-from flax.training import common_utils
-from flax.training import orbax_utils
-
-class TrainState(train_state.TrainState):
-    batch_stats: Any

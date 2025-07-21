@@ -184,27 +184,43 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                         epochs_per_task: int,
                         drop_factor: float = 0.2,
                         drop_epochs: tuple = (60, 120, 160)):
-        boundaries_and_scales = {}
-        cum_steps = 0
-        for t in range(1, num_tasks + 1):
+
+        # at what steps do we have a new task? 
+        task_starts = [0]
+        for t in range(1, num_tasks):
             S = base_steps_per_epoch * t
-            for e in drop_epochs:
-                boundary = cum_steps + S * e
-                boundaries_and_scales[boundary] = drop_factor
-            cum_steps += epochs_per_task * S
+            task_starts.append(task_starts[-1] + S * epochs_per_task)
+        
+        def lr_fn(global_step : int) -> float: 
+            # which task are we on?
+            t = next(i for i, start in enumerate(task_starts)
+                 if i == len(task_starts)-1 or global_step < task_starts[i+1])
+            
+            # which epoch are we on?
+            # local step within the task
+            S = base_steps_per_epoch * (t+1)
+            local_step = global_step - task_starts[t]
+            local_epoch = local_step // S
 
-        return optax.piecewise_constant_schedule(
-            init_value=base_lr,
-            boundaries_and_scales=boundaries_and_scales,
-        )
+            # piecewise constant lr schedule within the task
+            if local_epoch < drop_epochs[0]:
+                return base_lr 
+            elif local_epoch < drop_epochs[1]:
+                return base_lr * drop_factor
+            elif local_epoch < drop_epochs[2]:
+                return base_lr * (drop_factor**2)
+            else:
+                return base_lr * (drop_factor**3)
 
-    def linear_schedule(count):
-        frac = (
-            1.0
-            - (count // (args.num_minibatches * args.update_epochs))
-            / num_updates
-        )
-        return args.lr * frac
+        return lr_fn
+
+    # def linear_schedule(count):
+    #     frac = (
+    #         1.0
+    #         - (count // (args.num_minibatches * args.update_epochs))
+    #         / num_updates
+    #     )
+    #     return args.lr * frac
     def train(lr, er_lr, rng):
         agent = EffectiveRankAgent(network)
 
