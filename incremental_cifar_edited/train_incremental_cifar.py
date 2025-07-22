@@ -33,26 +33,6 @@ from torch.utils.data import DataLoader, Subset
 class TrainState(train_state.TrainState):
     batch_stats: Any
 
-def augment_image(image, rng):
-    """Applies padding, random crop and horizontal flip."""
-    # Pad the image (4 pixels on each side) → (40, 40, 3)
-    padded = jnp.pad(image, ((4, 4), (4, 4), (0, 0)), mode='reflect')
-    
-    # Random crop
-    crop_rng, flip_rng = jax.random.split(rng)
-    crop_x_rng, crop_y_rng = jax.random.split(crop_rng)
-    crop_x = jax.random.randint(crop_x_rng, (), 0, 9)  
-    crop_y = jax.random.randint(crop_y_rng, (), 0, 9)
-    cropped = lax.dynamic_slice(padded, (crop_x, crop_y, 0), (32, 32, 3))
-
-    # Horizontal flip
-    do_flip = jax.random.bernoulli(flip_rng)
-    flipped = jnp.where(do_flip, jnp.flip(cropped, axis=1), cropped)
-
-    return flipped
-
-batched_augment = jax.jit(jax.vmap(augment_image, in_axes=(0, 0)))
-
 # helpers for data loading and splitting
 def stratified_split(labels: np.ndarray, val_fraction: float) -> (list, list):
     """
@@ -124,6 +104,8 @@ ACTIVATIONS = {
     'elu': nn.elu,
 }
 
+# use only predict for evaluation, train with loss function 
+# also, don't forget about slicing the output of the model to only the current classes
 class EffectiveRankAgent:
     def __init__(self, network):
         self.network = network
@@ -148,11 +130,26 @@ class EffectiveRankAgent:
         loss_erank = - jnp.stack(erank_losses).mean()
         return loss_erank
 
-    def loss(self, state, x, y, train):
+    def loss(self, state, x, y, active_classes, train):
         variables = {'params': state.params, 'batch_stats': state.batch_stats}
-        (output, features), updates = state.apply_fn(variables, x=x, train=train, mutable=['batch_stats'])
-        loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
-        return loss, (output, features, updates)
+        (output_full, features), updates = state.apply_fn(variables, x=x, train=train, mutable=['batch_stats'])
+        
+        K = len(active_classes)
+        output = output_full[:, active_classes]  # consider only the active classes
+
+        num_total = output_full.shape[1] # should be 100 for CIFAR-100
+        class_to_idx = jnp.full((num_total,), -1, dtype=jnp.int32)
+        class_to_idx = class_to_idx.at[active_classes].set(jnp.arange(K, dtype=jnp.int32))
+
+        y_mapped = class_to_idx[y]
+
+        loss = jnp.mean(
+            optax.softmax_cross_entropy_with_integer_labels(
+                logits=output, 
+                labels=y_mapped
+            )
+        )
+        return loss, (output, features, updates, y_mapped)
     
     def perturb(self, params, perturb_scale, rng):
         return perturb_params(params, rng, perturb_scale)
@@ -172,11 +169,11 @@ def perturb_params(params, rng, scale):
 def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
     network = build_resnet18(num_classes=100)
-    num_tasks = args.num_tasks
-    images_per_class = 500
-    classes_per_task = 100 # since we're doing non-incremental CIFAR for now
-    examples_per_task = images_per_class * classes_per_task
-    all_classes = np.random.permutation(100)
+    num_tasks = args.num_tasks # this should be 20
+    images_per_class = 500 # 450 for training, 50 for validation 
+    classes_per_task = 5 # since we're doing incremental CIFAR
+    examples_per_task = images_per_class * classes_per_task # 2500 (2250 training, 250 validation)
+    class_order = np.random.permutation(100)
     
     def make_lr_scheduler(num_tasks: int,
                         base_lr: float,
@@ -214,13 +211,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
         return lr_fn
 
-    # def linear_schedule(count):
-    #     frac = (
-    #         1.0
-    #         - (count // (args.num_minibatches * args.update_epochs))
-    #         / num_updates
-    #     )
-    #     return args.lr * frac
     def train(lr, er_lr, rng):
         agent = EffectiveRankAgent(network)
 
@@ -284,7 +274,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
         # data for all 100 classes already split into train/val/test
         x_train, y_train = loader_to_arrays(train_loader)
-        x_train = batched_augment(x_train, jax.random.split(rng, x_train.shape[0]))
+        # x_train = batched_augment(x_train, jax.random.split(rng, x_train.shape[0]))
         
         x_val, y_val = loader_to_arrays(val_loader)
         
@@ -297,8 +287,8 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
         batch_stats = variables['batch_stats']
 
         lr_schedule = make_lr_scheduler(
-            num_tasks = args.num_tasks, #20 for incremental cifar-100
-            base_lr = args.lr, #0.1 for incremental cifar-100
+            num_tasks = args.num_tasks, # 20 for incremental cifar-100
+            base_lr = args.lr, # 0.1 for incremental cifar-100
             base_steps_per_epoch = 25,
             epochs_per_task = 200,
             drop_factor = 0.2,
@@ -340,23 +330,14 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     
                     # compute gradients and update parameters
                     grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
-                    (loss, (logits, activations, updates)), grads = grad_fn(train_state, minibatch_x, minibatch_y, train=True)
+                    (loss, (logits, activations, updates, y_mapped)), grads = grad_fn(train_state, minibatch_x, minibatch_y, active_classes, train=True)
+
                     train_state = train_state.apply_gradients(grads=grads)
                     train_state = train_state.replace(batch_stats=updates['batch_stats'])
 
                     # compute accuracy 
                     pred_labels = jnp.argmax(logits, axis=-1)
-                    accuracy = jnp.mean(pred_labels == minibatch_y)
-                    
-                    # kaicheng's old code:
-                    # loss = agent.loss(train_state, minibatch_x, minibatch_y)
-
-                    # logits, activations = agent.predict(train_state.params, minibatch_x)
-                    # pred_labels = jnp.argmax(logits, axis=-1)
-                    # accuracy = jnp.mean(pred_labels == minibatch_y)
-
-                    # grads = jax.grad(agent.loss)(train_state.params, minibatch_x, minibatch_y)
-                    # train_state = train_state.apply_gradients(grads=grads)
+                    accuracy = jnp.mean(pred_labels == y_mapped)
                     
                     if args.to_perturb: 
                         rng, _rng = jax.random.split(rng)
@@ -418,10 +399,10 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             accuracy_eval = jnp.mean(pred_labels == y_eval)
 
             # Evaluate the model on the previous train set
-            x_pretrain, y_pretrain = train_previous
-            output, features = agent.predict(train_state, x_pretrain, train=False)
-            pred_labels = jnp.argmax(output, axis=-1)
-            accuracy_pre = jnp.mean(pred_labels == y_pretrain)
+            # x_pretrain, y_pretrain = train_previous
+            # output, features = agent.predict(train_state, x_pretrain, train=False)
+            # pred_labels = jnp.argmax(output, axis=-1)
+            accuracy_pre = 0 # incremental cifar experiment doesn't do this
 
             l1_norm_change, l2_norm_change, linf_norm_change = compute_param_change_norms(old_params, train_state.params)
 
@@ -458,23 +439,30 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
         
         # per task 
         for task in range(num_tasks):
-            # commented out because we already loaded train/val/test 
-            # eval_size = args.eval_size
-            # train_size = examples_per_task - eval_size
-            # # Record the previous train set
-            # train_previous = (x_all[train_size:], y_all[train_size:])
-            # # permuted dataset
-            # rng, _rng = jax.random.split(rng)
-            # pixel_permutation = jax.random.permutation(rng, input_size)
-            # x_all = x_all[:, pixel_permutation]
-            # # Shuffle the data for the current task
-            # rng, _rng = jax.random.split(rng)
-            # data_permutation = jax.random.permutation(rng, examples_per_task)
-            # x_shuffled, y_shuffled = x_all[data_permutation], y_all[data_permutation]
 
-            # # Split into train and eval sets
-            # x_train, y_train = x_shuffled[:train_size], y_shuffled[:train_size]
-            # x_eval, y_eval = x_shuffled[train_size:], y_shuffled[train_size:]
+            num_classes_seen = (task + 1) * classes_per_task
+            active_classes = jnp.array(class_order[:num_classes_seen].tolist(), dtype=jnp.int32)
+
+            train_ds = CifarDataSet(
+                root_dir=args.data_path,
+                train=True,
+                cifar_type=100,
+                classes=active_classes,
+                image_normalization="max",
+                label_preprocessing=None,
+                use_torch=False,
+                flatten=False
+            )
+
+            train_ds.set_transformation(transform_train)
+
+            full_labels = np.array(train_ds.integer_labels)
+            tr_idx, val_idx = stratified_split(full_labels, val_fraction=0.1)
+            tr_loader = DataLoader(Subset(train_ds, tr_idx), batch_size=…, shuffle=True)
+            val_loader = DataLoader(Subset(train_ds, val_idx), batch_size=…, shuffle=False)
+
+            x_train, y_train = loader_to_arrays(tr_loader)
+            x_val, y_val = loader_to_arrays(val_loader)
 
             #compute hessian at the start of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
@@ -511,8 +499,8 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                 x_train,
                 y_train,
                 train_state,
-                train_previous, 
-                rng)
+                rng
+            )
             runner_state, res_info = update_task(runner_state, task)
             x_train, y_train, train_state, rng = runner_state
             rank_list.append(res_info['rank'])

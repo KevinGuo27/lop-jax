@@ -1,4 +1,8 @@
 import optax 
+from flax.training.train_state import TrainState
+from modified_resnet_linen import build_resnet18
+import jax
+import numpy as np
 
 def make_lr_scheduler(num_tasks: int,
                         base_lr: float,
@@ -12,8 +16,8 @@ def make_lr_scheduler(num_tasks: int,
         for t in range(1, num_tasks):
             S = base_steps_per_epoch * t
             task_starts.append(task_starts[-1] + S * epochs_per_task)
-        
-        def lr_fn(global_step : int) -> float: 
+
+        def lr_fn(global_step: int) -> float:
             # which task are we on?
             t = next(i for i, start in enumerate(task_starts)
                  if i == len(task_starts)-1 or global_step < task_starts[i+1])
@@ -45,5 +49,18 @@ lr_schedule = make_lr_scheduler(
     drop_epochs = (60, 120, 160),
 )
 
+network = build_resnet18(num_classes=100)
+network_params = network.init(jax.random.PRNGKey(0), jax.numpy.ones((1, 32, 32, 3)))['params']
+tx = optax.sgd(learning_rate=lr_schedule, momentum=0.9, nesterov=False)
+
+train_state = TrainState.create(
+    apply_fn=network.apply,
+    params=network_params,
+    tx=tx
+)
+
 for step in range(0, 100000, 25):
+    loss_fn = lambda params: 0.0  # dummy loss function
+    grads = jax.grad(loss_fn)(train_state.params)
+    train_state = train_state.apply_gradients(grads=grads)
     print(f"Epoch {step//25:4d} (global_step={step:5d}): lr = {lr_schedule(step):.5f}")
