@@ -274,9 +274,11 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
         batch_sizes = {'train': 90, 'val': 50, 'test': 100}
         val_fraction = 0.1
+        data_path = Path('/users/tserapio/lop-jax/incremental_cifar_edited/data/cifar-100-python')
 
         # init network
-        variables = network.init(rng, x_train[:1], train=True)
+        dummy_input = jnp.zeros((1, 3, 32, 32))
+        variables = network.init(rng, dummy_input, train=True)
         network_params = variables['params']
         batch_stats = variables['batch_stats']
 
@@ -383,7 +385,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                                         active_classes)
             accuracy = jnp.mean(accuracy)
             train_state = update_erbatch_runner_state[2]
-            runner_state = (x_all, y_all, train_state, rng)
+            # runner_state = (x_all, y_all, train_state, rng)
 
             # Evaluate the model on the current task
             logits_test, _ = agent.predict(train_state, x_test, train=False)
@@ -394,18 +396,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             pred_labels = jnp.argmax(logits_test, axis=-1)
             accuracy_eval = jnp.mean(pred_labels == y_test_map)
 
-            # kaicheng's old code
-            # x_eval, y_eval = x[:args.eval_size], y[:args.eval_size]
-            # output, features = agent.predict(train_state, x_eval, train=False)
-            # features_list = [f for f in features.values() if f is not None]
-            # rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
-            # pred_labels = jnp.argmax(output, axis=-1)
-            # accuracy_eval = jnp.mean(pred_labels == y_eval)
-
-            # Evaluate the model on the previous train set
-            # x_pretrain, y_pretrain = train_previous
-            # output, features = agent.predict(train_state, x_pretrain, train=False)
-            # pred_labels = jnp.argmax(output, axis=-1)
             accuracy_pre = 0 # incremental cifar experiment doesn't do this
 
             l1_norm_change, l2_norm_change, linf_norm_change = compute_param_change_norms(old_params, train_state.params)
