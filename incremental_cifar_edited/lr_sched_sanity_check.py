@@ -50,17 +50,20 @@ lr_schedule = make_lr_scheduler(
 )
 
 network = build_resnet18(num_classes=100)
-network_params = network.init(jax.random.PRNGKey(0), jax.numpy.ones((1, 32, 32, 3)))['params']
+variables = network.init(jax.random.PRNGKey(0), jax.numpy.ones((1, 32, 32, 3)))
+params = variables['params']
+batch_stats = variables['batch_stats']
 tx = optax.sgd(learning_rate=lr_schedule, momentum=0.9, nesterov=False)
 
 train_state = TrainState.create(
     apply_fn=network.apply,
     params=network_params,
     tx=tx
+    
 )
 
 for step in range(0, 100000, 25):
-    loss_fn = lambda params: 0.0  # dummy loss function
+    loss_fn = lambda params: 1.0  # dummy loss function
     grads = jax.grad(loss_fn)(train_state.params)
     train_state = train_state.apply_gradients(grads=grads)
     print(f"Epoch {step//25:4d} (global_step={step:5d}): lr = {lr_schedule(step):.5f}")

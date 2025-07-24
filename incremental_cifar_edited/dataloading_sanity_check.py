@@ -63,54 +63,40 @@ def main():
     val_fraction = 0.2
 
     # Initialize full CIFAR-100 dataset
-    dataset = CifarDataSet(
+    train_dataset = CifarDataSet(
         root_dir='./data/cifar-100-python',
         train=True,
         cifar_type=100,
-        classes=None,
+        classes=np.array(range(1)),
         image_normalization=None,
         label_preprocessing=None,
         use_torch=False,
         flatten=False
     )
 
-    for task in range(num_tasks):
-        # Define the new classes for this task
-        new_classes = list(range(task * classes_per_task,
-                                 (task + 1) * classes_per_task))
-        dataset.select_new_partition(new_classes)
+    test_dataset = CifarDataSet(
+        root_dir='./data/cifar-100-python',
+        train=False,
+        cifar_type=100,
+        classes=np.array(range(1)),
+        image_normalization=None,
+        label_preprocessing=None,
+        use_torch=False,
+        flatten=False
+    )
 
-        # Check that only the intended classes are present
-        current_labels = np.array(dataset.integer_labels)[
-            np.in1d(dataset.integer_labels, new_classes)
-        ]
-        unique_labels = np.unique(current_labels)
-        print(f"Task {task}: expecting classes {new_classes}, found {list(unique_labels)}")
+    train_data = train_dataset.data['data']
+    train_labels = train_dataset.data['labels']
+    print(train_data.shape) # 
+    print(train_labels.shape) 
 
-        # Stratified split into train/validation
-        labels_array = np.array(current_labels)
-        train_idx, val_idx = stratified_split(labels_array, val_fraction)
+    classes = [0]
+    x_train = []
+    for _class in classes:
+        x_train.append(train_data[train_labels == _class])
+    x_train = jnp.array(np.concatenate(x_train), dtype=jnp.float32).transpose(0, 2, 3, 1)
 
-        # Build PyTorch DataLoaders
-        train_loader = DataLoader(Subset(dataset, train_idx),
-                                  batch_size=batch_size,
-                                  shuffle=False)
-        val_loader = DataLoader(Subset(dataset, val_idx),
-                                batch_size=batch_size,
-                                shuffle=False)
-
-        # Convert loaders to JAX arrays
-        x_train, y_train = loader_to_arrays(train_loader)
-        x_val, y_val = loader_to_arrays(val_loader)
-        x_test, y_test = loader_to_arrays(val_loader)
-        x_all, y_all = jnp.concatenate([x_train, x_val, x_test], axis=0), jnp.concatenate([y_train, y_val, y_test], axis=0)
-
-        # Print shapes to verify
-        print(f"  Train: x={x_train.shape}, y={y_train.shape}")
-        print(f"  Val:   x={x_val.shape}, y={y_val.shape}")
-        print(f"  Test:  x={x_test.shape}, y={y_test.shape}")
-        print(f" All:  x={x_all.shape}, y={y_all.shape}") # should be of shape (3000, 32, 32, 3)
-        print("---")
+    print(x_train)
 
     print("Sanity check completed successfully.")
 

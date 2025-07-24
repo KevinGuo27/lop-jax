@@ -123,10 +123,11 @@ class ResNet18(nn.Module):
         x = make_layer(256,512,  2, 2)(x, feature_list=feature_list, train=train)
 
         # Global average pool + flatten
-        x = jnp.mean(x, axis=(1, 2))
+        x = nn.avg_pool(x, window_shape=(x.shape[1], x.shape[2]), strides=(1, 1), padding='VALID')
+        x = x.reshape((x.shape[0], -1))  # flatten to (batch, features)
         feature_list.append(x)
 
-        # Final classifier
+        # Final classifier - no linear in linen, use Dense
         x = nn.Dense(
             self.num_classes,
             kernel_init=nn.initializers.kaiming_normal()
