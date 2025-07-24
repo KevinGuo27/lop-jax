@@ -216,13 +216,12 @@ state = TrainState.create(
 
 dummy_inputs = jnp.ones((2, 32, 32, 3))
 dummy_labels = jnp.array([0, 1])
-(output_full, features), updates = state.apply_fn(variables, x=dummy_inputs, train=True, mutable='batch_stats')
+(output_full, features), updates = model.apply(variables, x=dummy_inputs, train=True, mutable='batch_stats')
 output = output_full[:, :2]  # only first 2 classes for this dummy example
 loss_fn = lambda params: 1.0 # dummy loss
 grads = jax.grad(loss_fn)(state.params)
 state = state.apply_gradients(grads=grads)
 state = state.replace(batch_stats=updates['batch_stats'])
-print(variables['batch_stats'].keys())
 
 print(output[0])
 

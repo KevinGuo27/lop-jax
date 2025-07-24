@@ -399,7 +399,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             # runner_state = (x_all, y_all, train_state, rng)
 
             # Evaluate the model on the current task
-            logits_test, _ = agent.predict(train_state, x_test, train=False)
+            logits_test, _ = agent.predict(train_state.params, train_state.batch_stats, x_test, train=False)
             logits_test  = logits_test[:, active_classes]
             class_to_idx = jnp.full((100,), -1, jnp.int32).at[active_classes].set(
                   jnp.arange(active_classes.shape[0], dtype=jnp.int32))

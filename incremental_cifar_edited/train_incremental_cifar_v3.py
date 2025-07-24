@@ -6,7 +6,7 @@ from time import time
 import optax
 import numpy as np
 from tqdm import tqdm
-from modified_resnet_linen_dict import build_resnet18
+from modified_resnet_linen import build_resnet18
 from pathlib import Path
 from collections import deque
 from utils.evaluation import summarize_all_layers
@@ -35,12 +35,18 @@ class TrainState(train_state.TrainState):
 class EffectiveRankAgent:
     def __init__(self, network):
         self.network = network
+        self.train_step = jax.jit(self.train_step)
         self.loss = jax.jit(self.loss)
         self.effective_rank_loss = jax.jit(self.effective_rank_loss)
-    
+
+    def train_step(self, train_state, x, y):
+        """Train for a single step"""
+        def loss_fn(params):
+            logits, features, updates
+
     def predict(self, params, batch_stats, x, train):
         variables = {"params": params, "batch_stats": batch_stats}
-        output, features = self.network.apply(variables, x, train=train, mutable='batch_stats')
+        output, features = self.network.apply(variables, x, train=train, mutable=False)
         return output, features
     
     def effective_rank(self, features, eps=1e-8):
@@ -53,7 +59,7 @@ class EffectiveRankAgent:
     
     def effective_rank_loss(self, params, batch_stats, x):
         variables = {"params": params, "batch_stats": batch_stats}
-        output, features = self.network.apply(variables, x, train=True, mutable='batch_stats')
+        output, features = self.network.apply(variables, x, train=True, mutable=False)
         erank_losses = [self.effective_rank(f) for f in features.values() if f is not None]
         erank_losses = erank_losses[-1:]  # Only take the last layer for rank computation
         loss_erank = - jnp.stack(erank_losses).mean()
@@ -61,14 +67,13 @@ class EffectiveRankAgent:
 
     def loss(self, params, batch_stats, x, y, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
-        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
+        (logits_full, features), updates = self.network.apply(variables, x, train=train, mutable='batch_stats')
         
         logits = logits_full[:, active_classes] # temporary, but need to only do for seen classes
-        class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-        y = class_to_idx[y]
-
+        y = jnp.array([active_classes.index(int(label)) for label in y])
+        
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=y))
-        return loss, updates
+        return loss, (logits, features, updates)
     
     def perturb(self, params, perturb_scale, rng):
         return perturb_params(params, rng, perturb_scale)
@@ -163,7 +168,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
         tx = optax.chain(
             optax.add_decayed_weights(args.weight_decay),
-            optax.sgd(learning_rate=0.9, momentum=args.momentum) # lr_scheduler is not working
+            optax.sgd(learning_rate=lr_schedule, momentum=args.momentum)
         )
         
         # if args.no_anneal_lr:
@@ -201,19 +206,18 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     # comment this out
                     # active_classes = class_order[: (task + 1) * classes_per_task]
                     
-                    loss = agent.loss(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
+                    # compute gradients
+                    grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
+                    (loss, (logits, activations, updates)), grads = grad_fn(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, train=True, active_classes=active_classes)
 
-                    ((logits_full, activations), updates) = agent.predict(train_state.params, train_state.batch_stats, minibatch_x, True)
+                    logits_full, activations = agent.predict(train_state.params, train_state.batch_stats, minibatch_x, train=True)
                     logits = logits_full[:, active_classes]
 
                     # accuracy 
                     pred_labels = jnp.argmax(logits, axis=-1)
 
-                    class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-                    true_minibatch_y_labels = class_to_idx[minibatch_y]
-                    accuracy = jnp.mean(pred_labels == true_minibatch_y_labels)
-
-                    grads, updates = jax.grad(agent.loss, has_aux=True)(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
+                    sliced_minibatch_y = jnp.array([active_classes.index(int(label)) for label in minibatch_y])
+                    accuracy = jnp.mean(pred_labels == sliced_minibatch_y)
 
                     # updates
                     train_state = train_state.apply_gradients(grads=grads)
@@ -279,7 +283,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             runner_state = (x, y, train_state, rng)
 
             # Evaluate the model on the current task
-            ((output_full, features), updates) = agent.predict(train_state.params, train_state.batch_stats, x_eval, train=False)
+            output_full, features = agent.predict(train_state.params, train_state.batch_stats, x_eval, train=False)
             output = output_full[:, active_classes]
 
             features_list = [f for f in features.values() if f is not None]
@@ -287,8 +291,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
             
             pred_labels = jnp.argmax(output, axis=-1)
-            class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-            true_labels = class_to_idx[y_eval] # this remapping is necessary because model's logits are now only for the active classes
+            true_labels = jnp.array([active_classes.index(int(label)) for label in y_eval])
 
             accuracy_eval = jnp.mean(pred_labels == true_labels)
 
