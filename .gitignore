@@ -216,3 +216,5 @@ impl_nnx/plots/
 impl_nnx/agents.py
 impl_nnx/incremental_cifar_experiment_jax_agents.py
 incremental_cifar_edited/data/
+
+incremental_cifar_edited/slurm_logs/

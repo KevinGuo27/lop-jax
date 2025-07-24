@@ -263,12 +263,14 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             # comment this out for now - tracer error
             # active_classes = class_order[: (task + 1) * classes_per_task]
 
-            x = jnp.transpose(jnp.array(all_x_train[jnp.isin(all_y_train, active_classes)]), (0, 2, 3, 1))
-            y = jnp.array(all_y_train[jnp.isin(all_y_train, active_classes)])
+            train_mask = jnp.isin(all_y_train, active_classes)
+            x = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), (0, 2, 3, 1))
+            y = jnp.compress(train_mask, all_y_train, axis=0) # axis 0 to select images
 
             # Similarly for test set
-            x_eval = jnp.transpose(jnp.array(all_x_test[jnp.isin(all_y_test, active_classes)]), (0, 2, 3, 1))
-            y_eval = jnp.array(all_y_test[jnp.isin(all_y_test, active_classes)])
+            test_mask = jnp.isin(all_y_test, active_classes)
+            x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), (0, 2, 3, 1))
+            y_eval = jnp.compress(test_mask, all_y_test, axis=0) # axis 0 to select images
 
             update_erbatch_runner_state = (x, y, train_state, rng)
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(update_erbatch, update_erbatch_runner_state, 
@@ -312,10 +314,11 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             return runner_state, res_info
 
         loss_list, acc_list, acc_eval_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], [], []
-        update_task = update_task # make sure to jit this later
+        update_task = jax.jit(update_task, static_argnums=(1,)) # make sure to jit this later
         for task in range(num_tasks):
             active_classes = class_order[: (task + 1) * classes_per_task]
             all_x_train, all_y_train, all_x_test, all_y_test = None, None, None, None
+            
             with open('./data/cifar100.pkl', 'rb') as f:
                 # these are numpy arrays
                 all_x_train, all_y_train, all_x_test, all_y_test = pickle.load(f)

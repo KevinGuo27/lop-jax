@@ -6,7 +6,7 @@ from time import time
 import optax
 import numpy as np
 from tqdm import tqdm
-from modified_resnet_linen import build_resnet18
+from modified_resnet_linen_dict import build_resnet18
 from pathlib import Path
 from collections import deque
 from utils.evaluation import summarize_all_layers
@@ -35,18 +35,12 @@ class TrainState(train_state.TrainState):
 class EffectiveRankAgent:
     def __init__(self, network):
         self.network = network
-        self.train_step = jax.jit(self.train_step)
         self.loss = jax.jit(self.loss)
         self.effective_rank_loss = jax.jit(self.effective_rank_loss)
-
-    def train_step(self, train_state, x, y):
-        """Train for a single step"""
-        def loss_fn(params):
-            logits, features, updates
-
+    
     def predict(self, params, batch_stats, x, train):
         variables = {"params": params, "batch_stats": batch_stats}
-        output, features = self.network.apply(variables, x, train=train, mutable=False)
+        output, features = self.network.apply(variables, x, train=train, mutable='batch_stats')
         return output, features
     
     def effective_rank(self, features, eps=1e-8):
@@ -59,7 +53,7 @@ class EffectiveRankAgent:
     
     def effective_rank_loss(self, params, batch_stats, x):
         variables = {"params": params, "batch_stats": batch_stats}
-        output, features = self.network.apply(variables, x, train=True, mutable=False)
+        output, features = self.network.apply(variables, x, train=True, mutable='batch_stats')
         erank_losses = [self.effective_rank(f) for f in features.values() if f is not None]
         erank_losses = erank_losses[-1:]  # Only take the last layer for rank computation
         loss_erank = - jnp.stack(erank_losses).mean()
@@ -67,13 +61,14 @@ class EffectiveRankAgent:
 
     def loss(self, params, batch_stats, x, y, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
-        (logits_full, features), updates = self.network.apply(variables, x, train=train, mutable='batch_stats')
+        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
         
         logits = logits_full[:, active_classes] # temporary, but need to only do for seen classes
-        y = jnp.array([active_classes.index(int(label)) for label in y])
-        
+        class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
+        y = class_to_idx[y]
+
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=y))
-        return loss, (logits, features, updates)
+        return loss, updates
     
     def perturb(self, params, perturb_scale, rng):
         return perturb_params(params, rng, perturb_scale)
@@ -98,7 +93,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
     test_images_per_class = 100
     images_per_class = train_images_per_class + test_images_per_class
     classes_per_task = 5
-    
     examples_per_epoch = train_images_per_class * classes_per_task
     num_epochs = args.num_epochs
 
@@ -168,20 +162,9 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
         tx = optax.chain(
             optax.add_decayed_weights(args.weight_decay),
-            optax.sgd(learning_rate=lr_schedule, momentum=args.momentum)
+            optax.sgd(learning_rate=0.1, momentum=args.momentum) # lr_scheduler is not working
         )
-        
-        # if args.no_anneal_lr:
-        #     if args.optimizer == 'adam':
-        #         tx = optax.chain(
-        #             optax.add_decayed_weights(args.weight_decay),
-        #             adam_with_param_counts(learning_rate=lr, eps=1e-5)
-        #         )
-        #     else:
-        #         tx = optax.chain(
-        #             optax.add_decayed_weights(args.weight_decay),
-        #             optax.sgd(learning_rate=lr_schedule, momentum=args.momentum)
-        #         )
+
         if args.cont_backprop:
             train_state = ContinualBackpropTrainState.create(
                 apply_fn=network.apply,
@@ -195,29 +178,26 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                 tx=tx,
                 batch_stats=batch_stats
             )
-        assert (examples_per_epoch // args.mini_batch_size) % args.er_batch == 0, "ER batch size must divide examples per task"
         def update_task(runner_state, task):
             def update_erbatch(runner_state, batch_idx):
                 def update_accuracy(runner_state, mini_batch_idx):
                     x, y, train_state, rng = runner_state
                     minibatch_x = jax.lax.dynamic_slice_in_dim(x, mini_batch_idx, args.mini_batch_size, axis=0)
                     minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
-
-                    # comment this out
-                    # active_classes = class_order[: (task + 1) * classes_per_task]
                     
-                    # compute gradients
-                    grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
-                    (loss, (logits, activations, updates)), grads = grad_fn(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, train=True, active_classes=active_classes)
+                    loss = agent.loss(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
 
-                    logits_full, activations = agent.predict(train_state.params, train_state.batch_stats, minibatch_x, train=True)
+                    ((logits_full, activations), updates) = agent.predict(train_state.params, train_state.batch_stats, minibatch_x, True)
                     logits = logits_full[:, active_classes]
 
                     # accuracy 
                     pred_labels = jnp.argmax(logits, axis=-1)
 
-                    sliced_minibatch_y = jnp.array([active_classes.index(int(label)) for label in minibatch_y])
-                    accuracy = jnp.mean(pred_labels == sliced_minibatch_y)
+                    class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
+                    true_minibatch_y_labels = class_to_idx[minibatch_y]
+                    accuracy = jnp.mean(pred_labels == true_minibatch_y_labels)
+
+                    grads, updates = jax.grad(agent.loss, has_aux=True)(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
 
                     # updates
                     train_state = train_state.apply_gradients(grads=grads)
@@ -262,28 +242,21 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                 runner_state = (x, y, train_state, rng)
                 return runner_state, (loss, accuracy)
 
-            all_x_train, all_y_train, all_x_test, all_y_test, train_state, rng = runner_state
-
-            # comment this out for now - tracer error
-            # active_classes = class_order[: (task + 1) * classes_per_task]
-
-            x = jnp.transpose(jnp.array(all_x_train[jnp.isin(all_y_train, active_classes)]), (0, 2, 3, 1))
-            y = jnp.array(all_y_train[jnp.isin(all_y_train, active_classes)])
-
-            # Similarly for test set
-            x_eval = jnp.transpose(jnp.array(all_x_test[jnp.isin(all_y_test, active_classes)]), (0, 2, 3, 1))
-            y_eval = jnp.array(all_y_test[jnp.isin(all_y_test, active_classes)])
+            x, y, x_eval, y_eval, train_state, rng = runner_state
 
             update_erbatch_runner_state = (x, y, train_state, rng)
-            update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(update_erbatch, update_erbatch_runner_state, 
-                                        jnp.arange(0, examples_per_epoch, args.mini_batch_size * args.er_batch), 
-                                        examples_per_epoch // (args.mini_batch_size * args.er_batch))
+            update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(
+                update_erbatch, 
+                update_erbatch_runner_state, 
+                jnp.arange(0, examples_per_epoch, args.mini_batch_size * args.er_batch)
+                # ,examples_per_epoch // (args.mini_batch_size * args.er_batch) # remove this to use the full task size
+            )
             accuracy = jnp.mean(accuracy)
             train_state = update_erbatch_runner_state[2]
             runner_state = (x, y, train_state, rng)
 
             # Evaluate the model on the current task
-            output_full, features = agent.predict(train_state.params, train_state.batch_stats, x_eval, train=False)
+            ((output_full, features), updates) = agent.predict(train_state.params, train_state.batch_stats, x_eval, train=False)
             output = output_full[:, active_classes]
 
             features_list = [f for f in features.values() if f is not None]
@@ -291,7 +264,8 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
             
             pred_labels = jnp.argmax(output, axis=-1)
-            true_labels = jnp.array([active_classes.index(int(label)) for label in y_eval])
+            class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
+            true_labels = class_to_idx[y_eval] # this remapping is necessary because model's logits are now only for the active classes
 
             accuracy_eval = jnp.mean(pred_labels == true_labels)
 
@@ -315,16 +289,33 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             return runner_state, res_info
 
         loss_list, acc_list, acc_eval_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], [], []
-        update_task = update_task # make sure to jit this later
+        update_task = jax.jit(update_task, static_argnums=(1,))
         for task in range(num_tasks):
+            num_classes_seen_so_far = (task + 1) * classes_per_task
+            jax.debug.print("Task {t}: Training on classes {c}", t=task, c=num_classes_seen_so_far)
+            
+            examples_per_epoch = train_images_per_class * num_classes_seen_so_far
+
+            assert (examples_per_epoch // args.mini_batch_size) % args.er_batch == 0, "ER batch size must divide examples per task"
+
             active_classes = class_order[: (task + 1) * classes_per_task]
             all_x_train, all_y_train, all_x_test, all_y_test = None, None, None, None
+            
             with open('./data/cifar100.pkl', 'rb') as f:
                 # these are numpy arrays
                 all_x_train, all_y_train, all_x_test, all_y_test = pickle.load(f)
             
             # we need to convert to jnp arrays
             all_x_train, all_y_train, all_x_test, all_y_test = map(jnp.array, (all_x_train, all_y_train, all_x_test, all_y_test))
+            
+            train_mask = jnp.isin(all_y_train, active_classes)
+            x_train = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), (0, 2, 3, 1))
+            y_train = jnp.compress(train_mask, all_y_train, axis=0) # axis 0 to select images
+
+            # Similarly for test set
+            test_mask = jnp.isin(all_y_test, active_classes)
+            x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), (0, 2, 3, 1))
+            y_eval = jnp.compress(test_mask, all_y_test, axis=0) # axis 0 to select images
             
             #compute hessian at the start of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
@@ -365,10 +356,10 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
                 # because update_task is jitted, we need to pass all_x andall_y here
                 runner_state = (
-                    all_x_train,
-                    all_y_train,
-                    all_x_test,
-                    all_y_test,
+                    x_train,
+                    y_train,
+                    x_eval,
+                    y_eval,
                     train_state,
                     rng)
                 runner_state, res_info = update_task(runner_state, task)
