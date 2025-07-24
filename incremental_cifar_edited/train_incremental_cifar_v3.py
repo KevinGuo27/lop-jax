@@ -354,6 +354,36 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                 # x_train = x_train[example_order]
                 # y_train = y_train[example_order]
 
+                # set the LR here by editing train_state
+                if epoch_idx == 0:
+                    train_state = train_state.replace(
+                        tx=optax.chain(
+                            optax.add_decayed_weights(args.weight_decay),
+                            optax.sgd(learning_rate=0.1, momentum=args.momentum)
+                        )
+                    )
+                elif epoch_idx % 60 == 0:
+                    train_state = train_state.replace(
+                        tx=optax.chain(
+                            optax.add_decayed_weights(args.weight_decay),
+                            optax.sgd(learning_rate=0.02, momentum=args.momentum)
+                        )
+                    )
+                elif epoch_idx % 120 == 0:
+                    train_state = train_state.replace(
+                        tx=optax.chain(
+                            optax.add_decayed_weights(args.weight_decay),
+                            optax.sgd(learning_rate=0.004, momentum=args.momentum)
+                        )
+                    )
+                elif epoch_idx % 160 == 0:
+                    train_state = train_state.replace(
+                        tx=optax.chain(
+                            optax.add_decayed_weights(args.weight_decay),
+                            optax.sgd(learning_rate=0.0008, momentum=args.momentum)
+                        )
+                    )
+
                 # because update_task is jitted, we need to pass all_x andall_y here
                 runner_state = (
                     x_train,
