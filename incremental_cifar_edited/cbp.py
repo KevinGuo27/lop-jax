@@ -1,12 +1,12 @@
 from functools import partial
-from typing import Any
 
 import chex
 from flax import struct
-import flax.training import train_state
+from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
 from optax import ScaleByAdamState, EmptyState
+from optax.transforms._accumulation import TraceState
 
 
 def num_top_mask(mask, vals, num_top):
@@ -55,7 +55,7 @@ def generate_seeds_for_pytree(key, pytree):
     return subkeys_pytree
 
 
-class ContinualBackpropTrainState(train_state.TrainState):
+class ContinualBackpropTrainState(TrainState):
     """
     Continual Backprop implementation in JAX.
 
@@ -79,7 +79,11 @@ class ContinualBackpropTrainState(train_state.TrainState):
         def filter_input_and_bias(k, x):
             if k[-1].key[-1] != '0' and k[-1].key != 'log_std':
                 # we do shape[0], since we index layer + 1
-                return jnp.zeros(x['kernel'].shape[0])
+                n_dim = len(x['kernel'].shape)
+                if n_dim == 2:
+                    return jnp.zeros(x['kernel'].shape[0])
+                else:
+                    return jnp.zeros(x['kernel'].shape[2])
 
         def layer_count(k, x):
             if k[-1].key[-1] != '0' and k[-1].key != 'log_std':
@@ -112,6 +116,16 @@ class ContinualBackpropTrainState(train_state.TrainState):
         # we take the mean over the batch dimension. when num_env == 1, this doesn't matter.
         activations = jax.tree.map(lambda x: jnp.mean(x, axis=0), activations)
 
+        def conv_mean(x):
+            ndim = len(x.shape)
+            if ndim == 1:
+                return x
+            elif ndim == 3:
+                return jnp.mean(x, axis=(0, 1))
+            else:
+                NotImplementedError
+
+        activations = jax.tree.map(conv_mean, activations)
         # First we update our ages
         new_ages = jax.tree.map(lambda x: x + 1, self.ages)
 
@@ -128,12 +142,16 @@ class ContinualBackpropTrainState(train_state.TrainState):
 
             # Hmmmm paper does a sum instead of a mean here. It should be the same since you're
             # meaning over the same number every time.
-            output_weight_mags = jnp.abs(out_param_set).mean(axis=-1)
+            if out_param_set.ndim == 2:
+                output_weight_mags = jnp.abs(out_param_set).mean(axis=-1)
+            else:
+                output_weight_mags = jnp.abs(out_param_set).mean(axis=(0, 1, 3))
             return output_weight_mags
 
         output_weight_mags = jax.tree_util.tree_map_with_path(get_output_weight_mags, self.utils)
-
         # Calculate our new utils
+        print('activations:', activations)
+        print('output_weight_mags:', output_weight_mags)
         u = jax.tree.map(lambda h, w: jnp.abs(h) * w, activations, output_weight_mags)
         new_utils = jax.tree.map(lambda ut, u: decay_rate * ut + (1 - decay_rate) * u, self.utils, u)
 
@@ -195,11 +213,15 @@ class ContinualBackpropTrainState(train_state.TrainState):
             next_layer_key = f'{network_id}_{int(layer_num) + 1}'
 
             # This should filter out the last layer
-            if next_layer_key in rmask:
+            if next_layer_key in rmask and next_layer_key != 'layer_3':
                 in_mask = rmask[next_layer_key]
                 if final_key == 'kernel':
-                    in_mask = in_mask[None, ...].repeat(og_params.shape[0], axis=0)
-
+                    if len(og_params.shape) == 2:
+                        in_mask = in_mask[None, ...].repeat(og_params.shape[0], axis=0)
+                    else:
+                        in_mask = in_mask[None, ...].repeat(og_params.shape[2], axis=0)
+                        in_mask = in_mask[None, ...].repeat(og_params.shape[1], axis=0)
+                        in_mask = in_mask[None, ...].repeat(og_params.shape[0], axis=0)
                     updated_params = (1 - in_mask) * updated_params
                     if rand_init_kernel:
                         rng, _rng = jax.random.split(rng)
@@ -220,7 +242,6 @@ class ContinualBackpropTrainState(train_state.TrainState):
         grad_state, sched_state = op_state
 
         opt_state_replace_fn = partial(replace_in_and_out, rand_init_kernel=False)
-
         if isinstance(grad_state, ScaleByAdamState):
             # zero out adam state parameters according to replacement_mask
             new_count = jax.tree_util.tree_map_with_path(opt_state_replace_fn, grad_state.count, rngs)
@@ -230,6 +251,9 @@ class ContinualBackpropTrainState(train_state.TrainState):
             new_adam_state = ScaleByAdamState(count=new_count, mu=new_mu, nu=new_nu)
             new_opt_state = (empty_state, (new_adam_state, sched_state))
         elif isinstance(grad_state, EmptyState):
+            new_grad_state = grad_state
+            new_opt_state = (empty_state, (new_grad_state, sched_state))
+        elif isinstance(grad_state, TraceState):
             new_grad_state = grad_state
             new_opt_state = (empty_state, (new_grad_state, sched_state))
         else:
