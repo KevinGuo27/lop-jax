@@ -10,14 +10,15 @@ class Hyperparams(Tap):
     platform: Literal['cpu', 'gpu'] = 'gpu'
     n_seeds: int = 1
 
+# CURRENT SET-UP: BASE DL / L2 AGENT 
 class IncrementalCIFARHyperparams(Hyperparams):
     env: str = 'incremental_cifar'
-    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2'
+    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2' # base DL uses l2
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
     lr: list[float] = [0.1]
     optimizer: Literal['adam', 'sgd'] = 'sgd'
-    weight_decay: float = 0.001 # Do we use L2 regularization?
+    weight_decay: float = 0.0005 # Do we use L2 regularization?
     to_perturb: bool = False  # Whether to perturb the input data
     perturb_scale: int = 1e-5
     mini_batch_size: int = 100

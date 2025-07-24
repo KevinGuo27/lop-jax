@@ -61,9 +61,9 @@ class EffectiveRankAgent:
 
     def loss(self, params, batch_stats, x, y, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
-        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
+        (logits_full, features), updates = self.network.apply(variables, x, train=train, mutable='batch_stats')
         
-        logits = logits_full[:, active_classes] # temporary, but need to only do for seen classes
+        logits = logits_full[:, active_classes]
         class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
         y = class_to_idx[y]
 
@@ -106,42 +106,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
     rng, order_key = jax.random.split(rng)
     class_order = np.random.permutation(num_classes)
-
-    # def make_lr_scheduler(num_tasks: int,
-    #                     base_lr: float,
-    #                     base_steps_per_epoch: int,
-    #                     epochs_per_task: int,
-    #                     drop_factor: float = 0.2,
-    #                     drop_epochs: tuple = (60, 120, 160)):
-
-    #     # at what steps do we have a new task? 
-    #     task_starts = [0]
-    #     for t in range(1, num_tasks):
-    #         S = base_steps_per_epoch * t
-    #         task_starts.append(task_starts[-1] + S * epochs_per_task)
-        
-    #     def lr_fn(global_step : int) -> float: 
-    #         # which task are we on?
-    #         t = next(i for i, start in enumerate(task_starts)
-    #              if i == len(task_starts)-1 or global_step < task_starts[i+1])
-            
-    #         # which epoch are we on?
-    #         # local step within the task
-    #         S = base_steps_per_epoch * (t+1)
-    #         local_step = global_step - task_starts[t]
-    #         local_epoch = local_step // S
-
-    #         # piecewise constant lr schedule within the task
-    #         if local_epoch < drop_epochs[0]:
-    #             return base_lr 
-    #         elif local_epoch < drop_epochs[1]:
-    #             return base_lr * drop_factor
-    #         elif local_epoch < drop_epochs[2]:
-    #             return base_lr * (drop_factor**2)
-    #         else:
-    #             return base_lr * (drop_factor**3)
-
-    #     return lr_fn
 
     def train(lr, er_lr, rng):
         agent = EffectiveRankAgent(network)
@@ -277,7 +241,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
                 )
                 jax.debug.print("True labels: {tl}", tl=true_labels)
-                jax.debug.print("Output Shape {os}", os=output.shape)
+                jax.debug.print("Predicted labels: {pl}", pl=pred_labels)
                 jax.debug.print("Active Classes: {ac}", ac=active_classes)
                 
             res_info = {
