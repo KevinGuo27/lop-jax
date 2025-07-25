@@ -38,11 +38,6 @@ class EffectiveRankAgent:
         self.loss = jax.jit(self.loss)
         self.effective_rank_loss = jax.jit(self.effective_rank_loss)
     
-    def predict(self, params, batch_stats, x, train):
-        variables = {"params": params, "batch_stats": batch_stats}
-        output, features = self.network.apply(variables, x, train=train, mutable='batch_stats')
-        return output, features
-    
     def effective_rank(self, features, eps=1e-8):
         sv = jnp.linalg.svdvals(features.T)
         sv = jnp.abs(sv)  
@@ -53,11 +48,22 @@ class EffectiveRankAgent:
     
     def effective_rank_loss(self, params, batch_stats, x):
         variables = {"params": params, "batch_stats": batch_stats}
-        output, features = self.network.apply(variables, x, train=True, mutable='batch_stats')
+        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
+        logits = logits_full[:, active_classes]
+
         erank_losses = [self.effective_rank(f) for f in features.values() if f is not None]
+        
         erank_losses = erank_losses[-1:]  # Only take the last layer for rank computation
         loss_erank = - jnp.stack(erank_losses).mean()
         return loss_erank
+
+    def predict(self, params, batch_stats, x, train, active_classes):
+        variables = {"params": params, "batch_stats": batch_stats}
+        
+        (logits_full, features), updates = self.network.apply(variables, x, train=train, mutable='batch_stats')
+        logits = logits_full[:, active_classes]
+
+        return logits, features
 
     def loss(self, params, batch_stats, x, y, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
@@ -139,11 +145,10 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     x, y, train_state, rng = runner_state
                     minibatch_x = jax.lax.dynamic_slice_in_dim(x, mini_batch_idx, args.mini_batch_size, axis=0)
                     minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
-                    
-                    loss, _ = agent.loss(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
 
-                    ((logits_full, activations), updates) = agent.predict(train_state.params, train_state.batch_stats, minibatch_x, True)
-                    logits = logits_full[:, active_classes]
+                    loss, _ = agent.loss(params=train_state.params, batch_stats=train_state.batch_stats, x=minibatch_x, y=minibatch_y, train=True, active_classes=active_classes)
+
+                    logits, activations = agent.predict(params=train_state.params, batch_stats=train_state.batch_stats, x=minibatch_x, train=True, active_classes=active_classes)
 
                     # accuracy 
                     pred_labels = jnp.argmax(logits, axis=-1)
@@ -214,21 +219,20 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                 update_erbatch, 
                 update_erbatch_runner_state, 
                 jnp.arange(0, examples_per_epoch, args.mini_batch_size * args.er_batch),
-                examples_per_epoch // (args.mini_batch_size * args.er_batch) # comment this out to use the full task size?? idk 
+                # examples_per_epoch // (args.mini_batch_size * args.er_batch) # comment this out to use the full task size?? idk 
             )
             accuracy = jnp.mean(accuracy)
             train_state = update_erbatch_runner_state[2]
             runner_state = (x, y, train_state, rng)
 
             # Evaluate the model on the current task
-            ((output_full, features), updates) = agent.predict(train_state.params, train_state.batch_stats, x_eval, train=False)
-            output = output_full[:, active_classes]
+            logits, features = agent.predict(params=train_state.params, batch_stats=train_state.batch_stats, x=x_eval, train=False, active_classes=active_classes)
 
             features_list = [f for f in features.values() if f is not None]
             features_list = features_list[-1:] # Only take the last layer for rank computation
             rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
             
-            pred_labels = jnp.argmax(output, axis=-1)
+            pred_labels = jnp.argmax(logits, axis=-1)
             class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
             true_labels = class_to_idx[y_eval] # this remapping is necessary because model's logits are now only for the active classes
 
