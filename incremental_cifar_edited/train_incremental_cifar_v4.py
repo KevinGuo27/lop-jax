@@ -61,13 +61,13 @@ class EffectiveRankAgent:
 
     def loss(self, params, batch_stats, x, y, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
-        (logits_full, features), updates = self.network.apply(variables, x, train=train, mutable='batch_stats')
+        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
         
         logits = logits_full[:, active_classes]
         class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-        y = class_to_idx[y]
+        sliced_y = class_to_idx[y]
 
-        loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=y))
+        loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=sliced_y))
         return loss, updates
     
     def perturb(self, params, perturb_scale, rng):
@@ -140,7 +140,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     minibatch_x = jax.lax.dynamic_slice_in_dim(x, mini_batch_idx, args.mini_batch_size, axis=0)
                     minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
                     
-                    loss = agent.loss(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
+                    loss, _ = agent.loss(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
 
                     ((logits_full, activations), updates) = agent.predict(train_state.params, train_state.batch_stats, minibatch_x, True)
                     logits = logits_full[:, active_classes]
@@ -213,8 +213,8 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(
                 update_erbatch, 
                 update_erbatch_runner_state, 
-                jnp.arange(0, examples_per_epoch, args.mini_batch_size * args.er_batch)
-                # ,examples_per_epoch // (args.mini_batch_size * args.er_batch) # remove this to use the full task size
+                jnp.arange(0, examples_per_epoch, args.mini_batch_size * args.er_batch),
+                examples_per_epoch // (args.mini_batch_size * args.er_batch) # comment this out to use the full task size?? idk 
             )
             accuracy = jnp.mean(accuracy)
             train_state = update_erbatch_runner_state[2]
@@ -240,9 +240,9 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     "Rank: {r}, EffRank: {er}, ApproxRank: {ar}, DeadNeurons: {dn}",
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
                 )
-                jax.debug.print("True labels: {tl}", tl=true_labels)
-                jax.debug.print("Predicted labels: {pl}", pl=pred_labels)
-                jax.debug.print("Active Classes: {ac}", ac=active_classes)
+                # jax.debug.print("True labels: {tl}", tl=true_labels)
+                # jax.debug.print("Predicted labels: {pl}", pl=pred_labels)
+                # jax.debug.print("Active Classes: {ac}", ac=active_classes)
                 
             res_info = {
                 'loss': loss,
@@ -332,21 +332,21 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                             optax.sgd(learning_rate=0.1, momentum=args.momentum)
                         )
                     )
-                elif epoch_idx % 60 == 0:
+                elif epoch_idx == 60:
                     train_state = train_state.replace(
                         tx=optax.chain(
                             optax.add_decayed_weights(args.weight_decay),
                             optax.sgd(learning_rate=0.02, momentum=args.momentum)
                         )
                     )
-                elif epoch_idx % 120 == 0:
+                elif epoch_idx == 120:
                     train_state = train_state.replace(
                         tx=optax.chain(
                             optax.add_decayed_weights(args.weight_decay),
                             optax.sgd(learning_rate=0.004, momentum=args.momentum)
                         )
                     )
-                elif epoch_idx % 160 == 0:
+                elif epoch_idx == 160:
                     train_state = train_state.replace(
                         tx=optax.chain(
                             optax.add_decayed_weights(args.weight_decay),
@@ -354,7 +354,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                         )
                     )
 
-                # because update_task is jitted, we need to pass all_x andall_y here
                 runner_state = (
                     x_train,
                     y_train,
