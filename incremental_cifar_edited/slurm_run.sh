@@ -14,4 +14,4 @@ module load cuda cudnn
 module load python/3.11.0s-ixrhc3q
 source ../.venv/bin/activate
 # run
-python train_incremental_cifar_v4.py
+python train_incremental_cifar_v5.py

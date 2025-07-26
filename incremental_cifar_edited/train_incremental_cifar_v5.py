@@ -60,7 +60,7 @@ class EffectiveRankAgent:
     def predict(self, params, batch_stats, x, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
         
-        logits_full, features = self.network.apply(variables, x, train=train)
+        logits_full, features = self.network.apply(variables, x, train=train) # train should be False (evaluation)
         logits = logits_full[:, active_classes]
 
         return logits, features
@@ -70,16 +70,15 @@ class EffectiveRankAgent:
         (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
         
         logits = logits_full[:, active_classes]
-        class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-        sliced_y = class_to_idx[y]
+        labels_one_hot = y[:, active_classes]
 
         jax.debug.print("Logits shape: {shape}", shape=jnp.shape(logits))
-        jax.debug.print("Sliced labels shape: {shape}", shape=jnp.shape(sliced_y))
-        jax.debug.print("Sliced labels (training): {labels}", labels=sliced_y)
+        jax.debug.print("Sliced labels shape: {shape}", shape=jnp.shape(labels_one_hot))
+        jax.debug.print("Sliced labels (training): {labels}", labels=labels_one_hot)
 
-        loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=sliced_y))
-        return loss, (logits, features, updates)
-
+        loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=labels_one_hot))
+        return loss, logits, features, updates
+    
     def perturb(self, params, perturb_scale, rng):
         return perturb_params(params, rng, perturb_scale)
 
@@ -108,7 +107,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
     all_x_train, all_y_train, all_x_test, all_y_test = None, None, None, None
 
-    with open('./data/cifar100.pkl', 'rb') as f:
+    with open('./data/cifar100-onehot.pkl', 'rb') as f:
         data = pickle.load(f)
 
     all_x_train_np, all_y_train_np = data['x_train'], data['y_train']
@@ -157,18 +156,16 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     minibatch_x = jax.lax.dynamic_slice_in_dim(x, mini_batch_idx, args.mini_batch_size, axis=0)
                     minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
 
-                    (loss, updates), grads
-
-                    logits, activations = agent.predict(params=train_state.params, batch_stats=train_state.batch_stats, x=minibatch_x, train=True, active_classes=active_classes)
+                    (loss, logits, activations, updates), grads = jax.value_and_grad(agent.loss, has_aux=True)(
+                        train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes
+                    )
 
                     # accuracy 
                     pred_labels = jnp.argmax(logits, axis=-1)
 
-                    class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-                    true_minibatch_y_labels = class_to_idx[minibatch_y]
-                    accuracy = jnp.mean(pred_labels == true_minibatch_y_labels)
-
-                    grads, updates = jax.grad(agent.loss, has_aux=True)(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
+                    labels_onehot = minibatch_y[:, active_classes]
+                    true_labels  = jnp.argmax(labels_onehot, axis=-1)
+                    accuracy = jnp.mean(pred_labels == true_labels)
 
                     # updates
                     train_state = train_state.apply_gradients(grads=grads)
@@ -247,8 +244,9 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
             
             pred_labels = jnp.argmax(logits, axis=-1)
-            class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-            true_labels = class_to_idx[y_eval] # this remapping is necessary because model's logits are now only for the active classes
+            
+            labels_onehot_eval = y_eval[:, active_classes]
+            true_labels  = jnp.argmax(labels_onehot_eval, axis=-1)
 
             accuracy_eval = jnp.mean(pred_labels == true_labels)
 
@@ -286,15 +284,25 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             active_classes = class_order[: (task + 1) * classes_per_task] # fix this to be tuple before getting passed on
             jax.debug.print("Active classes (init): {ac}", ac=active_classes)
-            
-            # mask training and test set only to active classes
-            train_mask = jnp.isin(all_y_train, active_classes)
+
+            true_train_labels = jnp.argmax(all_y_train, axis=1)
+            train_mask = jnp.isin(true_train_labels, active_classes)
+            y_train = all_y_train[train_mask, :]
             x_train = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
-            y_train = jnp.compress(train_mask, all_y_train, axis=0) # axis 0 to select images
-            # Similarly for test set
-            test_mask = jnp.isin(all_y_test, active_classes)
+
+            true_test_labels = jnp.argmax(all_y_test, axis=1)
+            test_mask = jnp.isin(true_test_labels, active_classes)
+            y_eval = all_y_test[test_mask, :]
             x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
-            y_eval = jnp.compress(test_mask, all_y_test, axis=0) # axis 0 to select images
+            
+            # # mask training and test set only to active classes
+            # train_mask = jnp.isin(all_y_train, active_classes)
+            # x_train = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
+            # y_train = jnp.compress(train_mask, all_y_train, axis=0) # axis 0 to select images
+            # # Similarly for test set
+            # test_mask = jnp.isin(all_y_test, active_classes)
+            # x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
+            # y_eval = jnp.compress(test_mask, all_y_test, axis=0) # axis 0 to select images
 
             active_classes = tuple(active_classes)  # convert to tuple for static_argnums
             
