@@ -73,6 +73,10 @@ class EffectiveRankAgent:
         class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
         sliced_y = class_to_idx[y]
 
+        jax.debug.print("Logits shape: {shape}", shape=jnp.shape(logits))
+        jax.debug.print("Sliced labels shape: {shape}", shape=jnp.shape(sliced_y))
+        jax.debug.print("Sliced labels (training): {labels}", labels=sliced_y)
+
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=sliced_y))
         return loss, updates
     
@@ -105,8 +109,15 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
     all_x_train, all_y_train, all_x_test, all_y_test = None, None, None, None
 
     with open('./data/cifar100.pkl', 'rb') as f:
-        # these are numpy arrays
-        all_x_train, all_y_train, all_x_test, all_y_test = pickle.load(f)
+        data = pickle.load(f)
+
+    all_x_train_np, all_y_train_np = data['x_train'], data['y_train']
+    all_x_test_np,  all_y_test_np  = data['x_test'],  data['y_test']
+
+    all_x_train = jnp.array(all_x_train_np)
+    all_y_train = jnp.array(all_y_train_np)
+    all_x_test = jnp.array(all_x_test_np)
+    all_y_test = jnp.array(all_y_test_np)
 
     num_classes = 100
 
@@ -213,13 +224,14 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             x, y, x_eval, y_eval, train_state, rng = runner_state
 
             active_classes = jnp.array(active_classes, dtype=jnp.int32)
+            jax.debug.print("Active classes (as jnp array): {ac}", ac=active_classes)
 
             update_erbatch_runner_state = (x, y, train_state, rng)
             update_erbatch_runner_state, (loss, accuracy) = jax.lax.scan(
                 update_erbatch, 
                 update_erbatch_runner_state, 
                 jnp.arange(0, examples_per_epoch, args.mini_batch_size * args.er_batch),
-                # examples_per_epoch // (args.mini_batch_size * args.er_batch) # comment this out to use the full task size?? idk 
+                examples_per_epoch // (args.mini_batch_size * args.er_batch) # comment this out to use the full task size?? idk 
             )
             accuracy = jnp.mean(accuracy)
             train_state = update_erbatch_runner_state[2]
@@ -227,6 +239,8 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             # Evaluate the model on the current task
             logits, features = agent.predict(params=train_state.params, batch_stats=train_state.batch_stats, x=x_eval, train=False, active_classes=active_classes)
+            jax.debug.print("Logits shape (evaluation): {shape}", shape=jnp.shape(logits))
+            jax.debug.print("Logits (evaluation): {logits}", logits=logits)
 
             features_list = [f for f in features.values() if f is not None]
             features_list = features_list[-1:] # Only take the last layer for rank computation
@@ -271,22 +285,15 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             assert (examples_per_epoch // args.mini_batch_size) % args.er_batch == 0, "ER batch size must divide examples per task"
 
             active_classes = class_order[: (task + 1) * classes_per_task] # fix this to be tuple before getting passed on
-            all_x_train, all_y_train, all_x_test, all_y_test = None, None, None, None
+            jax.debug.print("Active classes (init): {ac}", ac=active_classes)
             
-            with open('./data/cifar100.pkl', 'rb') as f:
-                # these are numpy arrays
-                all_x_train, all_y_train, all_x_test, all_y_test = pickle.load(f)
-            
-            # we need to convert to jnp arrays
-            all_x_train, all_y_train, all_x_test, all_y_test = map(jnp.array, (all_x_train, all_y_train, all_x_test, all_y_test))
-            
+            # mask training and test set only to active classes
             train_mask = jnp.isin(all_y_train, active_classes)
-            x_train = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), (0, 2, 3, 1))
+            x_train = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
             y_train = jnp.compress(train_mask, all_y_train, axis=0) # axis 0 to select images
-
             # Similarly for test set
             test_mask = jnp.isin(all_y_test, active_classes)
-            x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), (0, 2, 3, 1))
+            x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
             y_eval = jnp.compress(test_mask, all_y_test, axis=0) # axis 0 to select images
 
             active_classes = tuple(active_classes)  # convert to tuple for static_argnums
@@ -324,9 +331,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             for epoch_idx in tqdm(range(num_epochs)):
                 rng, _rng = jax.random.split(rng)
-                # example_order = jax.random.permutation(rng, train_images_per_class * classes_per_task) # shuffles the train data
-                # x_train = x_train[example_order]
-                # y_train = y_train[example_order]
 
                 # set the LR here by editing train_state
                 if epoch_idx == 0:

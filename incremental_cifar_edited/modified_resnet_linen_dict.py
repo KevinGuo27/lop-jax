@@ -10,10 +10,6 @@ from flax import linen as nn
 from typing import Any, Callable, List, Optional, Sequence
 import inspect
 
-import jax
-import jax.numpy as jnp
-from flax import linen as nn
-
 
 class SequentialWithKW(nn.Module):
     layers: Sequence[nn.Module]
