@@ -72,12 +72,8 @@ class EffectiveRankAgent:
         logits = logits_full[:, active_classes]
         labels_one_hot = y[:, active_classes]
 
-        jax.debug.print("Logits shape: {shape}", shape=jnp.shape(logits))
-        jax.debug.print("Sliced labels shape: {shape}", shape=jnp.shape(labels_one_hot))
-        jax.debug.print("Sliced labels (training): {labels}", labels=labels_one_hot)
-
         loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=labels_one_hot))
-        return loss, logits, features, updates
+        return loss, (logits, features, updates)
     
     def perturb(self, params, perturb_scale, rng):
         return perturb_params(params, rng, perturb_scale)
@@ -156,7 +152,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     minibatch_x = jax.lax.dynamic_slice_in_dim(x, mini_batch_idx, args.mini_batch_size, axis=0)
                     minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
 
-                    (loss, logits, activations, updates), grads = jax.value_and_grad(agent.loss, has_aux=True)(
+                    (loss, (logits, activations, updates)), grads = jax.value_and_grad(agent.loss, has_aux=True)(
                         train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes
                     )
 
