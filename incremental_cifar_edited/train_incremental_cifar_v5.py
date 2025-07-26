@@ -6,7 +6,7 @@ from time import time
 import optax
 import numpy as np
 from tqdm import tqdm
-from modified_resnet_linen_dict import build_resnet18
+from modified_resnet_linen_dict_v2 import build_resnet18
 from pathlib import Path
 from collections import deque
 from utils.evaluation import summarize_all_layers
@@ -67,8 +67,8 @@ class EffectiveRankAgent:
 
     def loss(self, params, batch_stats, x, y, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
-        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
-        
+        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable=['batch_stats'])
+
         logits = logits_full[:, active_classes]
         labels_one_hot = y[:, active_classes]
 
@@ -232,8 +232,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             # Evaluate the model on the current task
             logits, features = agent.predict(params=train_state.params, batch_stats=train_state.batch_stats, x=x_eval, train=False, active_classes=active_classes)
-            jax.debug.print("Logits shape (evaluation): {shape}", shape=jnp.shape(logits))
-            jax.debug.print("Logits (evaluation): {logits}", logits=logits)
 
             features_list = [f for f in features.values() if f is not None]
             features_list = features_list[-1:] # Only take the last layer for rank computation
@@ -244,6 +242,9 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             labels_onehot_eval = y_eval[:, active_classes]
             true_labels  = jnp.argmax(labels_onehot_eval, axis=-1)
 
+            jax.debug.print("Pred labels: {pl}", pl=pred_labels)
+            jax.debug.print("True labels: {tl}", tl=true_labels)
+
             accuracy_eval = jnp.mean(pred_labels == true_labels)
 
             if args.debug:
@@ -252,9 +253,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     "Rank: {r}, EffRank: {er}, ApproxRank: {ar}, DeadNeurons: {dn}",
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
                 )
-                # jax.debug.print("True labels: {tl}", tl=true_labels)
-                # jax.debug.print("Predicted labels: {pl}", pl=pred_labels)
-                # jax.debug.print("Active Classes: {ac}", ac=active_classes)
                 
             res_info = {
                 'loss': loss,
@@ -290,15 +288,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             test_mask = jnp.isin(true_test_labels, active_classes)
             y_eval = all_y_test[test_mask, :]
             x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
-            
-            # # mask training and test set only to active classes
-            # train_mask = jnp.isin(all_y_train, active_classes)
-            # x_train = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
-            # y_train = jnp.compress(train_mask, all_y_train, axis=0) # axis 0 to select images
-            # # Similarly for test set
-            # test_mask = jnp.isin(all_y_test, active_classes)
-            # x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
-            # y_eval = jnp.compress(test_mask, all_y_test, axis=0) # axis 0 to select images
 
             active_classes = tuple(active_classes)  # convert to tuple for static_argnums
             
