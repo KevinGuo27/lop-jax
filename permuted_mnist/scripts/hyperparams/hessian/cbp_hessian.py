@@ -2,8 +2,8 @@ from pathlib import Path
 
 exp_name = Path(__file__).stem
 
-lrs = [0.003]
-replacement_rates = [1e-4, 1e-5, 1e-6]
+lrs = [0.001]
+replacement_rates = [1e-6]
 
 hparams = {
     'file_name':
@@ -14,10 +14,12 @@ hparams = {
             'agent': 'cbp',
             'cont_backprop': True,
             'weight_decay': 0.0,
-            'num_features': 1000,
+            'num_features': 100,
             'lr': lrs,
+            'compute_hessian': True,
+            'compute_hessian_interval': 10,
             'replacement_rate': replacement_rates,
-            'seed': [2025 + i for i in range(5)],
+            'seed': 2025,
             'n_seeds': 1,
             'platform': 'gpu',
             'debug': True,

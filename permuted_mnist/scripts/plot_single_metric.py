@@ -68,10 +68,10 @@ if __name__ == "__main__":
 
     env_name = 'permuted_mnist'
     study_paths = [
-        ('L2 + ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_er'), 'green'),
-        ('BP', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp'), 'blue'),
-        ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2'), 'yellow'),
-        ('CBP', Path('/users/kguo32/rl-opt/permuted_mnist/results/cbp2'), 'red'),
+        ('L2 + ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_er_100'), 'green'),
+        ('BP', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp_100'), 'blue'),
+        ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_100'), 'yellow'),
+        ('CBP', Path('/users/kguo32/rl-opt/permuted_mnist/results/cbp_100'), 'red'),
     ]
 
     all_reses = []

@@ -12,7 +12,7 @@ hparams = {
     'args': [
         {
             'agent': 'l2',
-            'num_features': 2000,
+            'num_features': 1000,
             'weight_decay': weight_decays,
             'lr': lrs,
             'seed': [2025 + i for i in range(5)],

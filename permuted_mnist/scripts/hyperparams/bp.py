@@ -12,7 +12,7 @@ hparams = {
         {
             'agent': 'bp',
             'weight_decay': 0.0,
-            'num_features': 2000,
+            'num_features': 1000,
             'lr': lrs,
             'seed': [2025 + i for i in range(5)],
             'n_seeds': 1,

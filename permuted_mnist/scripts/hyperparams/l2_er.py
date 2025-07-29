@@ -13,7 +13,7 @@ hparams = {
     'args': [
         {
             'agent': 'l2_er',
-            'num_features': 2000,
+            'num_features': 1000,
             'lr': lrs,
             'er_lr': er_lrs,
             'weight_decay': weight_decays,
