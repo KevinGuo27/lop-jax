@@ -21,7 +21,7 @@ from rlopt.utils.file_system import get_results_path, numpyify
 from rlopt.cbp import ContinualBackpropTrainState
 from rlopt.config import NonStationaryPolicyHyperparams
 from rlopt.envs import load_nonstationary_env, load_env, is_continuous
-from rlopt.models import ActorCritic, ScannedRNN
+from rlopt.models import ActorCritic
 from rlopt.utils.optimizer import adam_with_param_counts
 
 from rlopt.utils.hessian_computation import get_hvp_fn
@@ -37,6 +37,7 @@ class Transition(NamedTuple):
     reward: jnp.ndarray
     log_prob: jnp.ndarray
     obs: jnp.ndarray
+    activations: jnp.ndarray
     info: jnp.ndarray = None
 
 class PPO:
@@ -60,6 +61,22 @@ class PPO:
         action = pi.sample(seed=rng)
         log_prob = pi.log_prob(action)
         return value, action, log_prob, activations
+    
+    def effective_rank(self, features, eps=1e-8):
+        sv = jnp.linalg.svdvals(features.T)
+        sv = jnp.abs(sv)  
+        total = jnp.maximum(sv.sum(), eps)
+        p = sv / total
+        entropy = -(p * jnp.log(p + eps)).sum()
+        return jnp.exp(entropy)
+    
+    def effective_rank_loss(self, params, obs):
+        _, _, activations = self.network.apply(params, obs)
+        pol_erank_losses = [self.effective_rank(f) for f in activations['actor'].values() if f is not None]
+        val_erank_losses = [self.effective_rank(f) for f in activations['critic'].values() if f is not None]
+        loss_erank = - (jnp.stack(pol_erank_losses).mean() +
+                        jnp.stack(val_erank_losses).mean())
+        return loss_erank
 
     def loss(self, params, traj_batch, gae, targets):
         # RERUN NETWORK
@@ -102,17 +119,10 @@ class PPO:
         return total_loss, (value_loss, loss_actor, entropy)
 
 
-def env_step(runner_state, unused, agent: PPO, env, env_params, args, compute_hessian=False):
+def env_step(runner_state, unused, agent: PPO, env, env_params, args):
     train_state, env_state, last_obs, rng = runner_state
     rng, _rng = jax.random.split(rng)
     value, action, log_prob, activations = agent.act(_rng, train_state, last_obs)
-    if args.cont_backprop and not compute_hessian:
-        rng, _rng = jax.random.split(rng)
-        train_state = train_state.update_and_reinit(_rng,
-                                                    activations,
-                                                    replacement_rate=args.replacement_rate,
-                                                    decay_rate=args.decay_rate,
-                                                    maturity_threshold=args.maturity_threshold)
 
     # STEP ENV
     rng, _rng = jax.random.split(rng)
@@ -120,7 +130,7 @@ def env_step(runner_state, unused, agent: PPO, env, env_params, args, compute_he
     obsv, env_state, reward, done, info = env.step(rng_step, env_state, action, env_params)
     
     transition = Transition(
-        done, action, value, reward, log_prob, last_obs, info
+        done, action, value, reward, log_prob, last_obs, activations, info
     )
     runner_state = (train_state, env_state, obsv, rng)
     return runner_state, transition
@@ -156,6 +166,7 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
     num_epochs = (
         num_updates // (args.change_every // args.num_steps // args.num_envs)
     )
+    print('num_epochs:', num_epochs)
     num_friction_changes = (
         args.total_steps // args.change_every // args.num_envs
     )
@@ -163,9 +174,10 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
         frictions = pickle.load(f)
     friction_schedule = frictions[args.friction_seed][:num_friction_changes]
     print('Friction schedule:', friction_schedule)
-    env, env_params = load_nonstationary_env(rng, args.env, gamma=args.gamma, 
+    env, env_params = load_nonstationary_env(rand_key, args.env, gamma=args.gamma, 
                         change_every=args.change_every, friction_schedule=friction_schedule)
 
+    print('Observation space:', env.observation_space(env_params))
     if hasattr(env, 'gamma'):
         args.gamma = env.gamma
 
@@ -187,22 +199,21 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
 
     _calculate_gae = calculate_gae
 
-    def linear_schedule(count):
+    def train(vf_coeff, lambda0, er_lr, lr, rng):
+        agent = PPO(network, vf_coeff=vf_coeff,
+                    clip_eps=args.clip_eps, entropy_coeff=args.entropy_coeff)
+
+        # initialize functions
+        _env_step = partial(env_step, agent=agent, env=env, env_params=env_params, args=args)
+        _hessian_env_step = partial(env_step, agent=agent, env=env, env_params=env_params, args=args)
+
+        def linear_schedule(count):
             frac = (
                     1.0
                     - (count // (args.num_minibatches * args.update_epochs))
                     / num_updates
             )
             return lr * frac
-
-    def train(vf_coeff, lambda0, lr, rng):
-        agent = PPO(network, vf_coeff=vf_coeff,
-                    clip_eps=args.clip_eps, entropy_coeff=args.entropy_coeff)
-
-        # initialize functions
-        _env_step = partial(env_step, agent=agent, env=env, env_params=env_params, compute_hessian=False, args=args)
-        _hessian_env_step = partial(env_step, agent=agent, env=env, env_params=env_params, compute_hessian=True, args=args)
-        # gae_lambda = jnp.array(lambda0)
 
         def hessian_computation(runner_state, epoch, at_init):
             train_state, env_state, last_obs, rng = runner_state
@@ -239,37 +250,39 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                 rng_key=rng
             )   
             density, grids = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-            jax.debug.callback(plot_hessian_spectrum, grids, density, epoch, args.study_name, is_initialization=at_init)
+            jax.debug.callback(plot_hessian_spectrum, grids, density, epoch, args.study_name, at_init=at_init)
 
         # INIT NETWORK
         rng, _rng = jax.random.split(rng)
-        init_x = jnp.zeros((env.observation_space(env_params).shape))
+        init_x = jnp.zeros(env.observation_space(env_params).shape)
         network_params = agent.network.init(_rng, init_x)
         param_count = sum(x.size for x in jax.tree_leaves(network_params))
         print('Network params number:', param_count)
         if args.anneal_lr:
-            if args.weight_decay == 0.0:
+            if args.optimizer == 'sgd':
                 tx = optax.chain(
                     optax.clip_by_global_norm(args.max_grad_norm),
-                    adam_with_param_counts(learning_rate=linear_schedule, eps=1e-5),
+                    optax.add_decayed_weights(args.weight_decay),
+                    optax.sgd(learning_rate=linear_schedule),
                 )
             else:
                 tx = optax.chain(
                     optax.clip_by_global_norm(args.max_grad_norm),
                     optax.add_decayed_weights(args.weight_decay),
-                    adam_with_param_counts(learning_rate=linear_schedule, eps=1e-5),
+                    adam_with_param_counts(learning_rate=linear_schedule, b1=args.beta_1, b2=args.beta_2),
                 )
         else:
-            if args.weight_decay == 0.0:
+            if args.optimizer == 'sgd':
                 tx = optax.chain(
                     optax.clip_by_global_norm(args.max_grad_norm),
-                    adam_with_param_counts(learning_rate=lr, eps=1e-5),
+                    optax.add_decayed_weights(args.weight_decay),
+                    optax.sgd(learning_rate=lr),
                 )
             else:
                 tx = optax.chain(
                     optax.clip_by_global_norm(args.max_grad_norm),
                     optax.add_decayed_weights(args.weight_decay),
-                    adam_with_param_counts(learning_rate=lr, eps=1e-5),
+                    adam_with_param_counts(learning_rate=lr, b1=args.beta_1, b2=args.beta_2),
                 )
         
         tstate_class = TrainState
@@ -327,15 +340,54 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
 
                 # UPDATE NETWORK
                 def _update_epoch(update_state, unused):
-                    def _update_minbatch(train_state, batch_info):
-                        traj_batch, advantages, targets = batch_info
+                    def _update_erbatch(train_state_rng, er_batches):
+                        def _update_erank(runner_state, unused):
+                            train_state, er_batches, rng = runner_state
+                            traj_batch, advantages, targets = er_batches
+                            er_loss = agent.effective_rank_loss(train_state.params, traj_batch.obs)
+                            grads = jax.grad(agent.effective_rank_loss)(train_state.params, traj_batch.obs)
+                            updates = jax.tree_util.tree_map(lambda g: -er_lr * g, grads)
+                            new_params = optax.apply_updates(train_state.params, updates)
+                            train_state = train_state.replace(params=new_params)
+                            return (train_state, er_batches, rng), er_loss
 
-                        grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
-                        total_loss, grads = grad_fn(
-                            train_state.params, traj_batch, advantages, targets
+                        def _update_minbatch(train_state_rng, batch_info):
+                            train_state, rng = train_state_rng
+                            traj_batch, advantages, targets = batch_info
+
+                            grad_fn = jax.value_and_grad(agent.loss, has_aux=True)
+                            total_loss, grads = grad_fn(
+                                train_state.params, traj_batch, advantages, targets
+                            )
+                            train_state = train_state.apply_gradients(grads=grads)
+                            if args.cont_backprop:
+                                rng, _rng = jax.random.split(rng)
+                                train_state = train_state.update_and_reinit(_rng,
+                                                                            traj_batch.activations,
+                                                                            replacement_rate=args.replacement_rate,
+                                                                            decay_rate=args.decay_rate,
+                                                                            maturity_threshold=args.maturity_threshold)
+                            return (train_state, rng), total_loss
+
+                        assert args.num_minibatches % args.er_batch == 0, "Effective rank batch size must be divisible by num_minibatches"
+                        minibatches = jax.tree_util.tree_map(
+                            lambda x: jnp.reshape(
+                                x,
+                                [args.er_batch, -1]
+                                + list(x.shape[1:]),
+                            ),
+                            er_batches,
                         )
-                        train_state = train_state.apply_gradients(grads=grads)
-                        return train_state, total_loss
+                        train_state, rng = train_state_rng
+                        if args.er:
+                            er_runner_state = (train_state, er_batches, rng)
+                            er_runner_state, er_loss = jax.lax.scan(_update_erank, er_runner_state, None, args.er_step)
+                            train_state, _, rng = er_runner_state
+
+                        (train_state, rng), total_loss = jax.lax.scan(
+                            _update_minbatch, (train_state, rng), minibatches
+                        )
+                        return (train_state, rng), total_loss
 
                     (
                         train_state,
@@ -359,23 +411,18 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                     shuffled_batch = jax.tree_util.tree_map(
                         lambda x: jnp.take(x, permutation, axis=0), batch
                     )
-
-                    minibatches = jax.tree_util.tree_map(
-                        lambda x: jnp.swapaxes(
-                            jnp.reshape(
-                                x,
-                                [args.num_minibatches, -1]
-                                + list(x.shape[1:]),
-                                ),
-                            1,
-                            0,
+                    er_batches = jax.tree_util.tree_map(
+                        lambda x: jnp.reshape(
+                            x,
+                            [args.num_minibatches // args.er_batch, -1]
+                            + list(x.shape[1:]),
                         ),
                         shuffled_batch,
                     )
-
-                    train_state, total_loss = jax.lax.scan(
-                        _update_minbatch, train_state, minibatches
+                    (train_state, rng), total_loss = jax.lax.scan(
+                        _update_erbatch, (train_state, rng), er_batches
                     )
+
                     update_state = (
                         train_state,
                         traj_batch,
@@ -440,9 +487,6 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
             env_state, 
             obsv, 
             _rng)
-        # final_runner_state, (metric, all_runner_states) = jax.lax.scan(
-        #     _epoch_step, init_runner_state, None, num_epochs
-        # )
         runner_state = init_runner_state
         metrics_list = []
         states_list = []

@@ -150,8 +150,6 @@ class ContinualBackpropTrainState(TrainState):
 
         output_weight_mags = jax.tree_util.tree_map_with_path(get_output_weight_mags, self.utils)
         # Calculate our new utils
-        print('activations:', activations)
-        print('output_weight_mags:', output_weight_mags)
         u = jax.tree.map(lambda h, w: jnp.abs(h) * w, activations, output_weight_mags)
         new_utils = jax.tree.map(lambda ut, u: decay_rate * ut + (1 - decay_rate) * u, self.utils, u)
 

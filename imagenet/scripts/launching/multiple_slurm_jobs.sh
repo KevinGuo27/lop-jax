@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=gpu         # Partition to run on
 #SBATCH --gres=gpu:1             # Request 8 GPU resources
-#SBATCH --exclude=gpu2115,gpu2106
+#SBATCH --exclude=gpu2115,gpu2106,gpu2109
 #SBATCH --time=12:00:00          # Request 12 hours of runtime
 #SBATCH --mem=32G                # Request 32GB of memory
 #SBATCH -J kevin        # Specify a job name
@@ -12,7 +12,7 @@
 source ~/pobax_baseline/bin/activate
 
 # Specify the filename
-input_file="../runs/runs_l2_er.txt"
+input_file="../runs/runs_er_hessian.txt"
 job_name=$(basename "$input_file" .txt) # Extract the base name of the file without extension
 
 # Read commands from the file and submit each as a separate job
@@ -22,7 +22,7 @@ while IFS= read -r command; do
 #SBATCH --partition=3090-gcondo
 #SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:1
-#SBATCH --exclude=gpu2106,gpu2102,gpu2115,gpu2105
+#SBATCH --exclude=gpu2106,gpu2102,gpu2115,gpu2105,gpu2110
 #SBATCH --time=72:00:00
 #SBATCH --mem=32G
 #SBATCH -J ${job_name}

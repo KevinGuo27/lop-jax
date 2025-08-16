@@ -3,7 +3,7 @@ from pathlib import Path
 exp_name = Path(__file__).stem
 
 lrs = [1e-3]
-weight_decays = [1e-3]
+weight_decays = [0.0001]
 
 hparams = {
     'file_name':
@@ -12,7 +12,7 @@ hparams = {
     'args': [
         {
             'agent': 'l2',
-            'num_features': 100,
+            'num_features': 1000,
             'compute_hessian': True,
             'compute_hessian_interval': 10,
             'weight_decay': weight_decays,

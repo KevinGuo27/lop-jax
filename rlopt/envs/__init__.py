@@ -7,7 +7,7 @@ import gymnax
 from gymnax import EnvParams
 import jax
 
-from .wrappers import BraxGymnaxWrapper, LogWrapper, ClipAction, VecEnv, NonstationaryFrictionBraxWrapper
+from .wrappers import BraxGymnaxWrapper, LogWrapper, ClipAction, VecEnv, NonstationaryFrictionBraxWrapper, NormalizeVecReward
 
 
 def load_brax_env(env_str: str):
@@ -42,7 +42,7 @@ def load_nonstationary_env(rng: chex.PRNGKey, env_str: str, gamma: float, fricti
         env_str = 'ant'
         env = NonstationaryFrictionBraxWrapper(env_str, change_every=change_every, friction_schedule=friction_schedule)
         env_params = EnvParams(max_steps_in_episode=env.max_steps_in_episode)
-        env = ClipAction(env)
+        # env = ClipAction(env)
     else:
         raise NotImplementedError
 
@@ -50,6 +50,7 @@ def load_nonstationary_env(rng: chex.PRNGKey, env_str: str, gamma: float, fricti
 
     # Vectorize our environment
     env = VecEnv(env)
+    # env = NormalizeVecReward(env, gamma=gamma)
     return env, env_params
 
 
@@ -60,5 +61,3 @@ def is_continuous(space: Space):
         return False
     else:
         raise NotImplementedError
-
-

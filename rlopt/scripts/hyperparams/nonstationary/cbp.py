@@ -2,8 +2,10 @@ from pathlib import Path
 
 exp_name = Path(__file__).stem
 
-lrs = [2.5e-3, 2.5e-4, 2.5e-5, 2.5e-6]
-lambda0s = [0.1, 0.5, 0.7, 0.9, 0.95]
+lrs = [1e-3, 1e-4, 1e-5]
+lambda0s = [0.95]
+vf_coeffs = [1.0]
+replacement_rates = [1e-4, 1e-5, 1e-6]
 
 hparams = {
     'file_name':
@@ -12,12 +14,19 @@ hparams = {
     'args': [
         {
             'env': 'slippery_ant',
-            'total_steps': 10000000,
+            'total_steps': 20000000,
             'num_envs': 1,
-            'num_minibatches': 1,
+            'num_minibatches': 16,
+            'num_steps': 2048,
+            'vf_coeff': vf_coeffs,
+            'replacement_rate': replacement_rates,
+            'maturity_threshold': 10000,
             'weight_decay': 0.0,
             'change_every': 2000000,
+            'cont_backprop': True,
             'lr': lrs,
+            'beta_1': 0.99,
+            'beta_2': 0.99,
             'lambda0': lambda0s,
             'seed': 2025,
             'n_seeds': 5,

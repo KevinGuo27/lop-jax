@@ -68,10 +68,12 @@ if __name__ == "__main__":
 
     env_name = 'permuted_mnist'
     study_paths = [
-        ('L2 + ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_er_100'), 'green'),
-        ('BP', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp_100'), 'blue'),
-        ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_100'), 'yellow'),
-        ('CBP', Path('/users/kguo32/rl-opt/permuted_mnist/results/cbp_100'), 'red'),
+        # ('L2 + ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_er_fix_lr'), 'green'),
+        # ('ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/er_fix_lr'), 'cyan'),
+        ('BP + LR(0.01)', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp_fix_lr'), 'blue'),
+        ('BP + LR(0.001)', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp'), 'cyan'),
+        # ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_fix_lr'), 'yellow'),
+        # ('CBP', Path('/users/kguo32/rl-opt/permuted_mnist/results/cbp_fix_lr'), 'red'),
     ]
 
     all_reses = []
@@ -83,7 +85,7 @@ if __name__ == "__main__":
     fig, ax = plot_reses(all_reses, metric=metric)
 
     # You could use plot_name if you want:
-    plot_name = f"{env_name}_{metric}_per_task.png"
+    plot_name = f"{env_name}_{metric}_bp_per_task.pdf"
     save_path = Path('/users/kguo32/rl-opt/permuted_mnist/results') / plot_name
 
     fig.savefig(save_path, bbox_inches='tight')

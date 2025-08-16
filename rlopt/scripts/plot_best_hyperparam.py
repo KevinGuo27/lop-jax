@@ -59,8 +59,7 @@ env_name_to_x_upper_lim = {
 
 def plot_reses(all_reses: list[tuple], n_rows: int = 2,
                individual_runs: bool = False):
-    plt.rcParams.update({'font.size': 32})
-
+    # plt.rcParams.update({'font.size': 32})
     # check to see that all our envs are the same across all reses.
     for _, x, _ in all_reses:
         for i in range(len(x['envs'])):
@@ -75,7 +74,7 @@ def plot_reses(all_reses: list[tuple], n_rows: int = 2,
 
     n_rows = min(n_rows, len(envs))
     n_cols = max((len(envs) + 1) // n_rows, 1) if len(envs) > 1 else 1
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(30, 20))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(8, 5))
 
     for k, (study_name, res, color) in enumerate(all_reses):
         scores = res['scores']
@@ -122,17 +121,20 @@ def plot_reses(all_reses: list[tuple], n_rows: int = 2,
                     ax.plot(x, m, color=colors[color], alpha=alpha)
             else:
                 ax.fill_between(x, env_mean - env_std_err, env_mean + env_std_err,
-                                color=colors[color], alpha=0.35)
-            ax.set_title(env_name_to_title.get(env, env))
-            if x_upper_lim is not None:
-                ax.set_xlim(right=x_upper_lim)
-            # ax.margins(x=0.015)
-            ax.locator_params(axis='x', nbins=3, min_n_ticks=3)
-            ax.locator_params(axis='y', nbins=3)
-            ax.spines[['right', 'top']].set_visible(False)
+                                color=colors[color], alpha=0.3)
+                ax.set_xlabel('Environment steps')
+                ax.set_ylabel(f'Online returns ({n_seeds} runs)')
+                ax.legend()
+            # ax.set_title(env_name_to_title.get(env, env))
+            # if x_upper_lim is not None:
+            #     ax.set_xlim(right=x_upper_lim)
+            # # ax.margins(x=0.015)
+            # ax.locator_params(axis='x', nbins=3, min_n_ticks=3)
+            # ax.locator_params(axis='y', nbins=3)
+            # ax.spines[['right', 'top']].set_visible(False)
 
     # Customize legend to use square markers
-    legend = plt.legend(loc='lower right')
+    # legend = plt.legend(loc='lower right')
 
     # # Change line in legend to square
     # for line in legend.get_lines():
@@ -141,8 +143,8 @@ def plot_reses(all_reses: list[tuple], n_rows: int = 2,
     #     line.set_linestyle('')
     #     line.set_markersize(20)  # Increase the marker size
 
-    fig.supxlabel('Environment steps')
-    fig.supylabel(f'Online discounted returns ({n_seeds} runs)')
+    # fig.supxlabel('Environment steps')
+    # fig.supylabel(f'Online returns ({n_seeds} runs)')
     #
     fig.tight_layout()
 
@@ -177,8 +179,11 @@ if __name__ == "__main__":
 
     # normal
     study_paths = [
-        # ('L2', Path('/users/kguo32/rl-opt/results/l2'), 'blue'),
-        ('BP', Path('/users/kguo32/rl-opt/results/bp'), 'blue'),
+        ('L2 + ER', Path('/users/kguo32/rl-opt/rlopt/results/l2_er'), 'green'),
+        ('ER', Path('/users/kguo32/rl-opt/rlopt/results/er'), 'cyan'),
+        ('L2', Path('/users/kguo32/rl-opt/rlopt/results/l2'), 'yellow'),
+        ('BP', Path('/users/kguo32/rl-opt/rlopt/results/bp'), 'blue'),
+        ('CBP + l2', Path('/users/kguo32/rl-opt/rlopt/results/cbp_l2'), 'red')
     ]
 
     # best
@@ -221,8 +226,11 @@ if __name__ == "__main__":
         best_res['step_multiplier'] = [step_multiplier] * len(best_res['envs'])
 
     fig, axes = plot_reses(all_reses, individual_runs=False, n_rows=3)
+    ymin, ymax = -2000, 4000
+    for ax in fig.axes:
+        ax.set_ylim(ymin, ymax)
 
-    save_plot_to = Path('/users/kguo32/rl-opt/results', f'{plot_name}.png')
+    save_plot_to = Path('/users/kguo32/rl-opt/rlopt/results', f'{plot_name}.pdf')
 
     fig.savefig(save_plot_to, bbox_inches='tight')
     print(f"Saved figure to {save_plot_to}")

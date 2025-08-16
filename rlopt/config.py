@@ -15,7 +15,7 @@ class Hyperparams(Tap):
         raise NotImplementedError
 
 class PolicyHyperparams(Tap):
-    env: str = 'ant'
+    env: str = 'slippery_ant'
     num_envs: int = 1
     gamma: float = 0.99
 
@@ -23,11 +23,14 @@ class PolicyHyperparams(Tap):
     update_epochs: int = 10
     num_minibatches: int = 16
     activation: Literal['relu', 'tanh'] = 'relu'
+    optimizer: Literal['adam', 'sgd'] = 'adam'
 
     lr: list[float] = [2.5e-4]
     lambda0: list[float] = [0.95]
     vf_coeff: list[float] = [0.5]
     weight_decay: float = 0.0
+    beta_1: float = 0.9
+    beta_2: float = 0.999
 
     # Continual Backprop
     cont_backprop: bool = False
@@ -35,17 +38,23 @@ class PolicyHyperparams(Tap):
     decay_rate: float = 0.99
     maturity_threshold: int = int(1e4)
 
+    # Effective Rank
+    er: bool = False
+    er_lr: list[float] = [0.01]
+    er_batch: int = 1
+    er_step: int = 1
+
     # compute hessian
     compute_hessian_init: bool = False
     compute_hessian_end: bool = False
     compute_hessian_size: int = 2000
     compute_hessian_interval: int = 1
 
-    hidden_size: int = 512
+    hidden_size: int = 256
     total_steps: int = int(5e6)
     entropy_coeff: float = 0.01
     clip_eps: float = 0.2
-    max_grad_norm: float = 0.5
+    max_grad_norm: float = 1e9
     anneal_lr: bool = False
 
     num_eval_envs: int = 10
@@ -65,6 +74,7 @@ class PolicyHyperparams(Tap):
         self.vf_coeff = jnp.array(self.vf_coeff)
         self.lr = jnp.array(self.lr)
         self.lambda0 = jnp.array(self.lambda0)
+        self.er_lr = jnp.array(self.er_lr)
 
 
 class PolicyEvalHyperparams(Hyperparams):
@@ -80,4 +90,4 @@ class PolicyEvalHyperparams(Hyperparams):
 
 class NonStationaryPolicyHyperparams(PolicyHyperparams):
     change_every: int = int(1e6)
-    friction_seed: int = 1  # Seed for the friction schedule
+    friction_seed: int = 0  # Seed for the friction schedule

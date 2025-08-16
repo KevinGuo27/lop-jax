@@ -51,26 +51,6 @@ ACTIVATIONS = {
     'elu': nn.elu,
 }
 
-class Layer(nn.Module):
-    """
-    A single dense layer with an optional activation.
-    """
-    out_dim: int
-    act_type: str = 'relu'
-
-    @nn.compact
-    def __call__(self, x):
-        kernel_init = nn.initializers.kaiming_uniform()
-        bias_init = nn.initializers.zeros
-        x = nn.Dense(
-            features=self.out_dim,
-            use_bias=True,
-            kernel_init=kernel_init,
-            bias_init=bias_init
-        )(x)
-        act_fn = ACTIVATIONS.get(self.act_type, lambda x: x)
-        return act_fn(x)
-
 class DeepFFNN(nn.Module):
     num_features: int = 2000
     num_outputs: int = 1
@@ -456,9 +436,9 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             'accuracy_eval':   accuracy_eval,
             'accuracy_pre':    accuracy_pre,
             'loss':            losses,
-            'rank':            ranks,
+            # 'rank':            ranks,
             'effective_rank':  eff_ranks,
-            'approx_rank':     approx_ranks,
+            # 'approx_rank':     approx_ranks,
             'dead_neurons':    dead_neurons,
             'train_state':     final_train_state
         }

@@ -31,7 +31,7 @@ def combine_seeds_and_envs(x: jnp.ndarray):
 
 def parse_exp_dir(study_path, study_hparam_path):
     # TODO: THIS
-    train_sign_hparams = ['vf_coeff', 'lambda0', 'lr', 'weight_decay']
+    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr']
     study_paths = list(study_path.iterdir())
     # remove the path that ends with best_hyperparam_per_env_res.pkl
     study_paths = [path for path in study_paths if not path.name.endswith('best_hyperparam_per_env_res.pkl')]
@@ -50,6 +50,7 @@ def parse_exp_dir(study_path, study_hparam_path):
             float(v.item()) if hasattr(v, "item") else float(v)
             for v in (args[hp] for hp in train_sign_hparams)
         )
+        print(args_tuple)
         # Get online metrics
         online_eval = restored['out']['metric']
         online_disc_returns = online_eval['returned_episode_returns']
@@ -86,6 +87,7 @@ def parse_exp_dir(study_path, study_hparam_path):
             max_mean_score = mean_score
             best_hyperparams = hyperparams[args_tuple]
             max_score = score
+    print('max_mean_score:', max_mean_score)
     print(f"Best hyperparams: {best_hyperparams}")
     envs.append(best_hyperparams['env'])
     max_score = jnp.expand_dims(max_score, axis=-1)

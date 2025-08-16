@@ -19,9 +19,12 @@ import matplotlib.pyplot as plt
 
 from definitions import ROOT_DIR
 
+def load_info(results_path: Path) -> dict:
+    return np.load(results_path, allow_pickle=True).item()
+
 
 def get_results_path(args, return_npy: bool = True):
-    results_dir = Path('/users/kguo32/rl-opt/results')
+    results_dir = Path('/users/kguo32/rl-opt/rlopt/results')
     results_dir.mkdir(exist_ok=True)
 
     args_hash = make_hash_md5(args.as_dict())
@@ -138,22 +141,56 @@ def numpyify(leaf):
         return np.array(leaf)
     return leaf
 
-def plot_hessian_spectrum(grids, density, task_num, agent_name, is_initialization=False):
+# def plot_hessian_spectrum(grids, density, task_num, agent_name, is_initialization=False):
+#     grids_np = np.array(grids)
+#     density_np = np.array(density)
+
+#     out_dir = Path("/users/kguo32/rl-opt/rlopt/hessian", agent_name)
+#     out_dir.mkdir(parents=True, exist_ok=True)
+#     fname = out_dir / f"hessian_task_{task_num}_{'init' if is_initialization else 'end'}_state.pdf"
+
+#     plt.figure(figsize=(8, 6))
+#     plt.semilogy(grids_np, density_np, label=f'Task {task_num}')
+#     plt.xlim(-1000, 10000)
+#     plt.ylim(1e-10, 1e2)
+#     plt.ylabel("Density")
+#     plt.xlabel("Eigenvalue")
+#     plt.title(f"Hessian Spectrum {agent_name} - Task {task_num}_{'init' if is_initialization else 'end'}")
+#     plt.legend()
+#     plt.grid(True, alpha=0.3)
+#     plt.savefig(fname)
+#     print(f"Saved Hessian spectrum to {fname}")
+#     plt.close()
+
+
+def plot_hessian_spectrum(grids, density, task_num, agent_name, at_init: bool = True, save_data: bool = True):
     grids_np = np.array(grids)
     density_np = np.array(density)
 
-    out_dir = Path("hessian", agent_name)
+    out_dir = Path("/users/kguo32/rl-opt/rlopt/hessian", agent_name)
     out_dir.mkdir(parents=True, exist_ok=True)
-    fname = out_dir / f"hessian_task_{task_num}_{'init' if is_initialization else 'end'}_state.png"
+    if at_init:
+        fname   = out_dir / f"hessian_task_{task_num}_at_init.pdf"
+    else:
+        fname   = out_dir / f"hessian_task_{task_num}_end.pdf"
 
     plt.figure(figsize=(8, 6))
-    plt.semilogy(grids_np, density_np, label=f'Task {task_num}')
+    plt.semilogy(grids_np, density_np, label=f'Task {task_num}', color='blue')
+    plt.xlim(-4000, 10000)
     plt.ylim(1e-10, 1e2)
     plt.ylabel("Density")
     plt.xlabel("Eigenvalue")
-    plt.title(f"Hessian Spectrum {agent_name} - Task {task_num}_{'init' if is_initialization else 'end'}")
+    # plt.title(f"Hessian Spectrum {agent_name} - Task {task_num}_{'init' if at_init else 'end'}")
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.savefig(fname)
     print(f"Saved Hessian spectrum to {fname}")
     plt.close()
+
+    if save_data:
+        #add subfolder for data
+        out_dir = Path("/users/kguo32/rl-opt/rlopt/hessian", "data", agent_name) 
+        out_dir.mkdir(parents=True, exist_ok=True)
+        fname   = out_dir / f"hessian_task_{task_num}_{'init' if at_init else 'end'}.npy"
+        np.save(fname, {'grids': grids_np, 'density': density_np})
+        print(f"Saved Hessian data to {fname}")

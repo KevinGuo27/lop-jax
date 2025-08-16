@@ -169,6 +169,6 @@ def plot_hessian_spectrum(grids_train, density_train, grids_test, density_test, 
         #add subfolder for data
         out_dir = Path("/users/kguo32/rl-opt/permuted_mnist/hessian", "data", agent_name) 
         out_dir.mkdir(parents=True, exist_ok=True)
-        fname   = out_dir / f"hessian_task_{task_num}.npy"
+        fname   = out_dir / f"hessian_task_{task_num}_{'init' if at_init else 'end'}.npy"
         np.save(fname, {'grids_train': grids_np_train, 'density_train': density_np_train, 'grids_test': grids_np_test, 'density_test': density_np_test})
         print(f"Saved Hessian data to {fname}")

@@ -163,4 +163,27 @@ cython_debug/
 results/
 
 
-data/
+permuted_mnist/data/
+permuted_mnist/hessian/
+permuted_mnist/results/
+permuted_mnist/scripts/runs/
+permuted_mnist/scripts/launching/
+
+rlopt/hessian/
+rlopt/results/
+rlopt/scripts/runs/
+rlopt/scripts/launching/
+
+imagenet/data/
+imagenet/hessian/
+imagenet/results/
+imagenet/scripts/runs/
+imagenet/scripts/launching/
+
+incremental_cifar/data/
+incremental_cifar/hessian/
+incremental_cifar/results/
+incremental_cifar/scripts/runs/
+incremental_cifar/scripts/launching/
+
+lop

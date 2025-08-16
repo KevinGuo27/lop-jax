@@ -5,7 +5,7 @@ from flax import struct
 from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
-from optax import ScaleByAdamState
+from optax import ScaleByAdamState, EmptyState
 
 
 def num_top_mask(mask, vals, num_top):
@@ -22,10 +22,10 @@ def num_top_mask(mask, vals, num_top):
 
     # Calculate the number of top elements to select
     # Get the threshold value for the top p% elements
-    threshold = jnp.sort(masked_vals)[-num_top]
+    threshold = jnp.sort(masked_vals)[-(num_top + 1)]
 
     # Create a new mask for elements that are above or equal to the threshold
-    top_p_mask_flat = (masked_vals >= threshold) & (mask_flat)
+    top_p_mask_flat = (masked_vals > threshold) & (mask_flat)
 
     # Reshape back to the original shape
     return top_p_mask_flat.reshape(mask.shape)
@@ -110,7 +110,6 @@ class ContinualBackpropTrainState(TrainState):
                           maturity_threshold: float = int(1e4)):
         # we take the mean over the batch dimension. when num_env == 1, this doesn't matter.
         activations = jax.tree.map(lambda x: jnp.mean(x, axis=0), activations)
-        activations = jax.tree.map(lambda x: jnp.mean(x, axis=0), activations)
 
         # First we update our ages
         new_ages = jax.tree.map(lambda x: x + 1, self.ages)
@@ -132,8 +131,9 @@ class ContinualBackpropTrainState(TrainState):
             return output_weight_mags
 
         output_weight_mags = jax.tree_util.tree_map_with_path(get_output_weight_mags, self.utils)
+
         # Calculate our new utils
-        u = jax.tree.map(lambda h, w: jnp.abs(h) + w, activations, output_weight_mags)
+        u = jax.tree.map(lambda h, w: jnp.abs(h) * w, activations, output_weight_mags)
         new_utils = jax.tree.map(lambda ut, u: decay_rate * ut + (1 - decay_rate) * u, self.utils, u)
 
         # THIS PART has a discrepancy between the code and the paper.
@@ -141,14 +141,19 @@ class ContinualBackpropTrainState(TrainState):
         # Now we figure out who CAN update first
         eligiblility_mask = jax.tree.map(lambda age: age > maturity_threshold, new_ages)
         num_new_features = jax.tree.map(lambda x: replacement_rate * x.sum(), eligiblility_mask)
-        floor_num_new_features = jax.tree.map(lambda x: jnp.floor(x).astype(int), num_new_features)
-        new_acc_num_replacements = jax.tree.map(lambda acc, nnf, fnnf: acc + nnf - fnnf,
+        # floor_num_new_features = jax.tree.map(lambda x: jnp.floor(x).astype(int), num_new_features)
+        new_acc_num_replacements = jax.tree.map(lambda acc, nnf: acc + nnf,
                                                 self.acc_num_replacements,
-                                                num_new_features,
-                                                floor_num_new_features)
+                                                num_new_features)
+                                    
+        # jax.debug.print('new_acc_num_replacements: {acc}', acc=new_acc_num_replacements)
+        floor_new_acc_num_replacements = jax.tree.map(lambda x: jnp.floor(x).astype(int), new_acc_num_replacements)
+        new_acc_num_replacements = jax.tree.map(lambda total, whole: total - whole,
+                                new_acc_num_replacements,
+                                floor_new_acc_num_replacements)
 
         # mask of all the features we need to replace
-        replacement_mask = jax.tree.map(num_top_mask, eligiblility_mask, new_utils, floor_num_new_features)
+        replacement_mask = jax.tree.map(num_top_mask, eligiblility_mask, new_utils, floor_new_acc_num_replacements)
         # new utils and ages for elements being replaced
         new_utils = jax.tree.map(lambda m, u: (1 - m) * u, replacement_mask, new_utils)
         new_ages = jax.tree.map(lambda m, a: (1 - m) * a, replacement_mask, new_ages)
@@ -198,7 +203,7 @@ class ContinualBackpropTrainState(TrainState):
                     if rand_init_kernel:
                         rng, _rng = jax.random.split(rng)
                         random_init = jax.random.uniform(_rng, shape=in_mask.shape, minval=-bound, maxval=bound)
-                        updated_params = in_mask * random_init
+                        updated_params += in_mask * random_init
                 elif final_key == 'bias':
                     # zero out the biases to replace
                     updated_params = (1 - in_mask) * updated_params
@@ -210,19 +215,24 @@ class ContinualBackpropTrainState(TrainState):
         new_params = jax.tree_util.tree_map_with_path(param_replace_fn, self.params, rngs)
 
         # zero out optimizer states related to replaced nodes
-        empty_state, op_state = self.opt_state
-        adam_state, sched_state = op_state
+        *empty_state, op_state = self.opt_state
+        grad_state, sched_state = op_state
 
-        assert isinstance(adam_state, ScaleByAdamState), 'CBP currently only works with the adam optimizer.'
         opt_state_replace_fn = partial(replace_in_and_out, rand_init_kernel=False)
 
-        # zero out adam state parameters according to replacement_mask
-        new_count = jax.tree_util.tree_map_with_path(opt_state_replace_fn, adam_state.count, rngs)
-        new_mu = jax.tree_util.tree_map_with_path(opt_state_replace_fn, adam_state.mu, rngs)
-        new_nu = jax.tree_util.tree_map_with_path(opt_state_replace_fn, adam_state.nu, rngs)
+        if isinstance(grad_state, ScaleByAdamState):
+            # zero out adam state parameters according to replacement_mask
+            new_count = jax.tree_util.tree_map_with_path(opt_state_replace_fn, grad_state.count, rngs)
+            new_mu = jax.tree_util.tree_map_with_path(opt_state_replace_fn, grad_state.mu, rngs)
+            new_nu = jax.tree_util.tree_map_with_path(opt_state_replace_fn, grad_state.nu, rngs)
 
-        new_adam_state = ScaleByAdamState(count=new_count, mu=new_mu, nu=new_nu)
-        new_opt_state = (empty_state, (new_adam_state, sched_state))
+            new_adam_state = ScaleByAdamState(count=new_count, mu=new_mu, nu=new_nu)
+            new_opt_state = (*empty_state, (new_adam_state, sched_state))
+        elif isinstance(grad_state, EmptyState):
+            new_grad_state = grad_state
+            new_opt_state = (*empty_state, (new_grad_state, sched_state))
+        else:
+            raise NotImplementedError
 
         return self.replace(
             params=new_params,

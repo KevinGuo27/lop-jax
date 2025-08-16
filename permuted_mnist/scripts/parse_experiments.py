@@ -41,7 +41,7 @@ def parse_exp_dir(study_path, study_hparam_path):
             float(v.item()) if hasattr(v, 'item') else float(v)
             for v in (args[hp] for hp in train_sign_hparams)
         )
-
+        print(args_tuple)
         out = restored['out']
         # accuracy_eval shape: (er_lr, seed, tasks)
         online_eval = out['accuracy']

@@ -12,7 +12,7 @@ hparams = {
         {
             'agent': 'bp',
             'weight_decay': 0.0,
-            'num_features': 100,
+            'num_features': 1000,
             'compute_hessian': True,
             'compute_hessian_interval': 10,
             'lr': lrs,
