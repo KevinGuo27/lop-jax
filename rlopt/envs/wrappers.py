@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Sequence
 from functools import partial
 
 from brax import envs
@@ -44,7 +44,6 @@ class LogEnvState:
     returned_discounted_episode_returns: float
     returned_episode_lengths: int
     timestep: int
-
 
 class LogWrapper(GymnaxWrapper):
     """Log the episode returns and lengths."""
@@ -166,11 +165,10 @@ class NonstationaryFrictionBraxWrapper(BraxGymnaxWrapper):
     
     def __init__(self, env_name, backend="positional",
                  change_every: int = int(1e5),
-                 lower_friction_exp: float = -4,
-                 upper_friction_exp: float = 4):
+                 friction_schedule: Sequence[float] = (1e-2, 0.1, 0.5, 1.0)):
         self.change_every = change_every
-        self.lower_friction_exp = lower_friction_exp
-        self.upper_friction_exp = upper_friction_exp
+        self.schedule = jnp.array(friction_schedule, dtype=jnp.float32)
+        self.num_phases = len(self.schedule)
 
         env = envs.get_environment(env_name=env_name, backend=backend)
         self.max_steps_in_episode = 1000
@@ -195,43 +193,252 @@ class NonstationaryFrictionBraxWrapper(BraxGymnaxWrapper):
     def step(self, rng: chex.PRNGKey, state: State, action: jnp.ndarray, params=None):
         sys = self._env.unwrapped.sys
         new_timestep = state.info['timestep'] + 1
+        phase = (new_timestep // self.change_every) % self.num_phases
+        friction = self.schedule[phase]
+        new_geom_friction = state.info['sys_variation']['geom_friction'].at[:, 0].set(friction)
+        variation = {'geom_friction': new_geom_friction}
+        new_sys = sys.replace(**variation)
+        new_env = self.env_fn(new_sys)
+        next_state = new_env.step(state, action)
+        next_state.info['sys_variation'] = variation
 
-        def sample_new_friction(rng, s, a):
-            friction_rng, rng = jax.random.split(rng)
-            new_friction_exp = jax.random.uniform(friction_rng,
-                                                  minval=self.lower_friction_exp,
-                                                  maxval=self.upper_friction_exp)
-            new_friction = 10 ** new_friction_exp
-            new_geom_friction = s.info['sys_variation']['geom_friction'].at[:, 0].set(new_friction)
-            new_variation = {'geom_friction': new_geom_friction}
+        geom_fric = next_state.info['sys_variation']['geom_friction']
+        info = {
+            'friction': geom_fric,
+        }
+        return next_state.obs, next_state, next_state.reward, next_state.done > 0.5, info
 
-            new_sys = sys.replace(**new_variation)
-            new_env = self.env_fn(new_sys)
+@struct.dataclass
+class NormalizeVecRewEnvState:
+    mean: jnp.ndarray
+    var: jnp.ndarray
+    count: float
+    return_val: float
+    env_state: environment.EnvState
 
-            s_prime = new_env.step(s, a)
 
-            reset_rng, rng = jax.random.split(rng)
-            new_s = new_env.reset(reset_rng)
-            # TODO: test this somehow. I THINK this should be correct in terms of the done.
-            new_s = new_s.replace(done=s_prime.done, reward=s_prime.reward)
-            new_s.info['sys_variation'] = new_variation
+class NormalizeVecReward(GymnaxWrapper):
+    def __init__(self, env, gamma):
+        super().__init__(env)
+        self.gamma = gamma
 
-            return new_s
-
-        def use_same_friction(rng, s, a):
-            new_sys = sys.replace(**s.info['sys_variation'])
-            new_env = self.env_fn(new_sys)
-
-            new_s = new_env.step(s, a)
-            new_s.info['sys_variation'] = s.info['sys_variation']
-            return new_s
-
-        reset = new_timestep % self.change_every == 0
-        next_state = jax.lax.cond(
-            reset,
-            sample_new_friction,
-            use_same_friction,
-            rng, state, action
+    def reset(self, key, params=None):
+        obs, state = self._env.reset(key, params)
+        batch_count = obs.shape[0]
+        state = NormalizeVecRewEnvState(
+            mean=0.0,
+            var=1.0,
+            count=1e-4,
+            return_val=jnp.zeros((batch_count,)),
+            env_state=state,
         )
-        return next_state.obs, next_state, next_state.reward, next_state.done > 0.5, {}
+        return obs, state
 
+    def step(self, key, state, action, params=None):
+        obs, env_state, reward, done, info = self._env.step(
+            key, state.env_state, action, params
+        )
+        return_val = state.return_val * self.gamma * (1 - done) + reward
+
+        batch_mean = jnp.mean(return_val, axis=0)
+        batch_var = jnp.var(return_val, axis=0)
+        batch_count = obs.shape[0]
+
+        delta = batch_mean - state.mean
+        tot_count = state.count + batch_count
+
+        new_mean = state.mean + delta * batch_count / tot_count
+        m_a = state.var * state.count
+        m_b = batch_var * batch_count
+        M2 = m_a + m_b + jnp.square(delta) * state.count * batch_count / tot_count
+        new_var = M2 / tot_count
+        new_count = tot_count
+
+        state = NormalizeVecRewEnvState(
+            mean=new_mean,
+            var=new_var,
+            count=new_count,
+            return_val=return_val,
+            env_state=env_state,
+        )
+        return obs, state, reward / jnp.sqrt(state.var + 1e-8), done, info
+
+
+from typing import Any, Optional, Tuple, Dict, Union, List
+
+import chex
+import jax
+import gymnasium as gym
+from gymnasium import Wrapper, core
+from gymnasium.core import WrapperObsType, WrapperActType, SupportsFloat, Env
+from gymnasium.wrappers import AddRenderObservation
+
+from gymnax.environments import environment
+from gymnax.environments import spaces
+
+
+class GymnaxToGymWrapper(gym.Env[core.ObsType, core.ActType]):
+    """Wrap Gymnax environment as OOP Gym environment."""
+
+    def __init__(
+            self,
+            env: environment.Environment,
+            params: Optional[environment.EnvParams] = None,
+            seed: Optional[int] = None,
+            num_envs: Optional[int] = None,
+    ):
+        """Wrap Gymnax environment as OOP Gym environment.
+
+
+        Args:
+            env: Gymnax Environment instance
+            params: If provided, gymnax EnvParams for environment (otherwise uses
+              default)
+            seed: If provided, seed for JAX PRNG (otherwise picks 0)
+        """
+        super().__init__()
+        self._env = env
+        self.env_params = params if params is not None else env.default_params
+        self.metadata.update(
+            {
+                "name": env.name,
+                "render_modes": (
+                    ["human", "rgb_array"] if hasattr(env, "render") else []
+                ),
+            }
+        )
+        self.rng: chex.PRNGKey = jax.random.PRNGKey(0)  # Placeholder
+        self._seed(seed)
+        self.num_envs = num_envs
+        rng = self.rng
+        if self.num_envs is not None:
+            rng = jax.random.split(self.rng, self.num_envs)
+        _, self.env_state = self._env.reset(rng, self.env_params)
+        self.max_steps_in_episode = self.env_params.max_steps_in_episode
+
+    @property
+    def action_space(self):
+        """Dynamically adjust action space depending on params."""
+        return spaces.gymnax_space_to_gym_space(self._env.action_space(self.env_params))
+
+    @property
+    def observation_space(self):
+        """Dynamically adjust state space depending on params."""
+        return spaces.gymnax_space_to_gym_space(
+            self._env.observation_space(self.env_params)
+        )
+
+    def _seed(self, seed: Optional[int] = None):
+        """Set RNG seed (or use 0)."""
+        self.rng = jax.random.PRNGKey(seed or 0)
+
+    def step(
+            self, action: core.ActType
+    ) -> Tuple[core.ObsType, float, bool, bool, Dict[Any, Any]]:
+        """Step environment, follow new step API."""
+        self.rng, step_key = jax.random.split(self.rng)
+        step_keys = jax.random.split(step_key, self.num_envs)
+        o, self.env_state, r, d, info = self._env.step(
+            step_keys, self.env_state, action, self.env_params
+        )
+        return o, r, d, d, info
+
+    def reset(
+            self,
+            *,
+            seed: Optional[int] = None,
+            return_info: bool = False,
+            options: Optional[Any] = None,  # dict
+    ) -> Tuple[core.ObsType, Any]:  # dict]:
+        """Reset environment, update parameters and seed if provided."""
+        if seed is not None:
+            self._seed(seed)
+        if options is not None:
+            self.env_params = options.get(
+                "env_params", self.env_params
+            )  # Allow changing environment parameters on reset
+        self.rng, reset_key = jax.random.split(self.rng)
+        reset_keys = jax.random.split(reset_key, self.num_envs)
+        o, self.env_state = self._env.reset(reset_keys, self.env_params)
+        return o, {}
+
+    def render(
+            self, mode="human"
+    ) -> Optional[Union[core.RenderFrame, List[core.RenderFrame]]]:
+        """use underlying environment rendering if it exists, otherwise return None."""
+        return getattr(self._env, "render", lambda x, y: None)(
+            self.env_state, self.env_params
+        )
+
+class PixelOnlyObservationWrapper(AddRenderObservation):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.observation_space = self.observation_space['pixels']
+
+    def observation(self, observation):
+        dict_observations = super().observation(observation)
+        return dict_observations['pixels']
+
+
+class OnlineReturnsLogWrapper(Wrapper):
+    def __init__(self, *args, gamma: float = 0.9, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.gamma = gamma
+        self.episode_return = 0
+        self.discounted_episode_return = 0
+        self.episode_length = 0
+        self.returned_episode_return = 0
+        self.returned_discounted_episode_return = 0
+        self.timestep = 0
+
+    def reset(
+        self, *, seed: int | None = None, options: dict[str, Any] | None = None
+    ) -> tuple[WrapperObsType, dict[str, Any]]:
+        obs, info = self.env.reset(seed=seed, options=options)
+        self.returned_episode_return = self.episode_return
+        self.returned_discounted_episode_return = self.discounted_episode_return
+        self.timestep = 0
+        info = {
+            'episode_return': self.episode_return,
+            'returned_episode_return': self.returned_episode_return,
+            'returned_discounted_episode_return': self.returned_discounted_episode_return,
+            'episode_length': self.episode_length,
+            'timestep': self.timestep,
+            'returned_episode': False,
+            # **info
+        }
+
+        self.episode_return = 0
+        self.discounted_episode_return = 0
+        self.episode_length = 0
+        return obs, info
+
+    def step(
+        self, action: WrapperActType
+    ) -> tuple[WrapperObsType, SupportsFloat, bool, bool, dict[str, Any]]:
+        obs, reward, done, truncation, info = self.env.step(action)
+
+        new_episode_return = self.episode_return + reward
+        new_discounted_episode_return = self.discounted_episode_return + (self.gamma ** self.episode_length) * reward
+        new_episode_length = self.episode_length + 1
+
+        not_done_or_not_trunc = (1 - done) * (1 - truncation)
+        self.episode_return = new_episode_return * not_done_or_not_trunc
+        self.discounted_episode_return = new_discounted_episode_return * not_done_or_not_trunc
+        self.episode_length = new_episode_length * not_done_or_not_trunc
+
+        self.returned_episode_return = self.returned_episode_return * not_done_or_not_trunc \
+                                       + new_episode_return * (1 - not_done_or_not_trunc)
+        self.returned_discounted_episode_return = self.returned_discounted_episode_return * not_done_or_not_trunc\
+                                                  + new_discounted_episode_return * (1 - not_done_or_not_trunc)
+
+        info = {
+            'episode_return': self.episode_return,
+            'returned_episode_return': self.returned_episode_return,
+            'returned_discounted_episode_return': self.returned_discounted_episode_return,
+            'episode_length': self.episode_length,
+            'timestep': self.timestep + 1,
+            'returned_episode': done
+            # **info
+        }
+        return obs, reward, done, truncation, info

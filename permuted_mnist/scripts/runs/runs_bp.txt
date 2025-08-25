@@ -1,0 +1,5 @@
+python -m permuted_mnist.train_permuted_mnist --agent bp --weight_decay 0.0 --num_features 1000 --lr 0.01 --seed 2025 --n_seeds 1 --platform gpu --debug --study_name bp
+python -m permuted_mnist.train_permuted_mnist --agent bp --weight_decay 0.0 --num_features 1000 --lr 0.01 --seed 2026 --n_seeds 1 --platform gpu --debug --study_name bp
+python -m permuted_mnist.train_permuted_mnist --agent bp --weight_decay 0.0 --num_features 1000 --lr 0.01 --seed 2027 --n_seeds 1 --platform gpu --debug --study_name bp
+python -m permuted_mnist.train_permuted_mnist --agent bp --weight_decay 0.0 --num_features 1000 --lr 0.01 --seed 2028 --n_seeds 1 --platform gpu --debug --study_name bp
+python -m permuted_mnist.train_permuted_mnist --agent bp --weight_decay 0.0 --num_features 1000 --lr 0.01 --seed 2029 --n_seeds 1 --platform gpu --debug --study_name bp

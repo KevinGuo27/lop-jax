@@ -14,16 +14,14 @@ import numpy as np
 from flax.training.train_state import TrainState
 import optax
 import orbax.checkpoint
+import os
+import matplotlib.pyplot as plt
 
-from pobax.envs import get_env
-from pobax.models import get_gymnax_network_fn
-from pobax.config import Hyperparams
+#from definitions import ROOT_DIR
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-from definitions import ROOT_DIR
-
-
-def get_results_path(args: Hyperparams, return_npy: bool = True):
-    results_dir = Path(ROOT_DIR, 'results')
+def get_results_path(args, return_npy: bool = True):
+    results_dir = Path('/users/kguo32/rl-opt/permuted_mnist/results')
     results_dir.mkdir(exist_ok=True)
 
     args_hash = make_hash_md5(args.as_dict())
@@ -73,32 +71,6 @@ def import_module_to_var(fpath: Path, var_name: str) -> Union[dict, list]:
 
 def load_info(results_path: Path) -> dict:
     return np.load(results_path, allow_pickle=True).item()
-
-
-def load_train_state(key: jax.random.PRNGKey, fpath: Path):
-    # load our params
-    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-    restored = orbax_checkpointer.restore(fpath)
-    args = restored['args']
-    unpacked_ts = restored['out']['runner_state'][0]
-
-
-    env, env_params = get_env(args['env'], key,
-                              args['gamma'],
-                              action_concat=args['action_concat'])
-
-    network_fn, action_size = get_gymnax_network_fn(env, env_params, memoryless=args['memoryless'])
-
-    network = network_fn(action_size,
-                         double_critic=args['double_critic'],
-                         hidden_size=args['hidden_size'])
-    tx = optax.adam(args['lr'][0])
-    ts = TrainState.create(apply_fn=network.apply,
-                           params=jax.tree_map(lambda x: x[0, 0, 0, 0, 0, 0], unpacked_ts['params']),
-                           tx=tx)
-
-    return env, env_params, args, network, ts
-
 
 def get_fn_from_module(entry: str, fn_name: str = 'make_train'):
     """
@@ -165,4 +137,38 @@ def numpyify(leaf):
     if isinstance(leaf, jnp.ndarray):
         return np.array(leaf)
     return leaf
-    
+
+def plot_hessian_spectrum(grids_train, density_train, grids_test, density_test, task_num, agent_name, at_init: bool = True,save_data: bool = True):
+    grids_np_train = np.array(grids_train)
+    density_np_train = np.array(density_train)
+    grids_np_test = np.array(grids_test)
+    density_np_test = np.array(density_test)
+
+    out_dir = Path("/users/kguo32/rl-opt/permuted_mnist/hessian", agent_name)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if at_init:
+        fname   = out_dir / f"hessian_task_{task_num}_at_init.pdf"
+    else:
+        fname   = out_dir / f"hessian_task_{task_num}_end.pdf"
+
+    plt.figure(figsize=(8, 6))
+    plt.semilogy(grids_np_train, density_np_train, label=f'Task {task_num} train', color='blue')
+    plt.semilogy(grids_np_test, density_np_test, label=f'Task {task_num} test', color='orange')
+    plt.ylim(1e-10, 1e2)
+    plt.xlim(-10, 50)
+    plt.ylabel("Density")
+    plt.xlabel("Eigenvalue")
+    # plt.title(f"Hessian Spectrum {agent_name} - Task {task_num}_{'init' if at_init else 'end'}")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(fname)
+    print(f"Saved Hessian spectrum to {fname}")
+    plt.close()
+
+    if save_data:
+        #add subfolder for data
+        out_dir = Path("/users/kguo32/rl-opt/permuted_mnist/hessian", "data", agent_name) 
+        out_dir.mkdir(parents=True, exist_ok=True)
+        fname   = out_dir / f"hessian_task_{task_num}_{'init' if at_init else 'end'}.npy"
+        np.save(fname, {'grids_train': grids_np_train, 'density_train': density_np_train, 'grids_test': grids_np_test, 'density_test': density_np_test})
+        print(f"Saved Hessian data to {fname}")
