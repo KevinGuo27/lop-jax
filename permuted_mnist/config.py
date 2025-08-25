@@ -29,6 +29,7 @@ class PermutedMnistHyperparams(Hyperparams):
     num_tasks: int = 800  # Number of tasks in the permuted MNIST
 
     # Effective Rank
+
     er_lr: list[float] = [0.01]
     er_batch: int = 100
     er_step: int = 1
