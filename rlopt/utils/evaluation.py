@@ -54,6 +54,8 @@ def summarize_all_layers(
     5) dead neuron counts (columns that sum to zero)
     """
     ms = jnp.asarray(ms)
+    ms = ms.squeeze()
+    assert len(ms.shape) == 3, "Must preprocess to a 3D array (num_layer, batch_size, features)"
     ranks, eff_ranks, approx_ranks, approx_ranks_abs = batched_summaries(ms)
     
     # Dead‐neuron count: for each layer, sum abs over rows => per‐column sums, count zeros

@@ -37,6 +37,7 @@ def parse_exp_dir(study_path, study_hparam_path):
     study_paths = [path for path in study_paths if not path.name.endswith('best_hyperparam_per_env_res.pkl')]
 
     scores, final_scores, envs, hyperparams, eval_dict, final_eval_dict = {}, {}, [], {}, {}, {}
+    dead_neurons, effective_rank = {}, {}
     for results_path in tqdm(study_paths):
         results_path = Path(results_path).resolve()
         if results_path.suffix == '.npy':
@@ -50,7 +51,6 @@ def parse_exp_dir(study_path, study_hparam_path):
             float(v.item()) if hasattr(v, "item") else float(v)
             for v in (args[hp] for hp in train_sign_hparams)
         )
-        print(args_tuple)
         # Get online metrics
         online_eval = restored['out']['metric']
         online_disc_returns = online_eval['returned_episode_returns']
@@ -60,12 +60,22 @@ def parse_exp_dir(study_path, study_hparam_path):
         else:
             eval_dict[args_tuple] = [online_disc_returns]
         hyperparams[args_tuple] = args
+        if args_tuple in dead_neurons:
+            dead_neurons[args_tuple].append(online_eval['dead_neurons'])
+        else:
+            dead_neurons[args_tuple] = [online_eval['dead_neurons']]
+        if args_tuple in effective_rank:
+            effective_rank[args_tuple].append(online_eval['effective_rank'])
+        else:
+            effective_rank[args_tuple] = [online_eval['effective_rank']]
         del restored
 
     
     # combine the seeds
     for args_tuple, online_disc_returns in eval_dict.items():
         eval_dict[args_tuple] = np.stack(online_disc_returns, axis=0)
+        dead_neurons[args_tuple] = np.stack(dead_neurons[args_tuple], axis=0)
+        effective_rank[args_tuple] = np.stack(effective_rank[args_tuple], axis=0)
 
     for args_tuple, online_disc_returns in eval_dict.items(): 
         seeds_combined = combine_seeds_and_envs(online_disc_returns)
@@ -81,22 +91,27 @@ def parse_exp_dir(study_path, study_hparam_path):
 
     for args_tuple, score in scores.items():
         score = score.squeeze()  # remove the last dimension if it is 1
-        print(score.shape)
         mean_score = score.mean(axis=-1).mean(axis=-1).mean(axis=-1)
         if mean_score > max_mean_score:
             max_mean_score = mean_score
             best_hyperparams = hyperparams[args_tuple]
+            best_dead_neurons = dead_neurons[args_tuple].squeeze()
+            best_effective_rank = effective_rank[args_tuple].squeeze()
             max_score = score
     print('max_mean_score:', max_mean_score)
     print(f"Best hyperparams: {best_hyperparams}")
     envs.append(best_hyperparams['env'])
     max_score = jnp.expand_dims(max_score, axis=-1)
+    best_dead_neurons = jnp.sum(best_dead_neurons, axis=-1)
+    best_effective_rank = jnp.sum(best_effective_rank, axis=-1)
 
     parsed_res = {
         'envs': envs,
         'scores': max_score,
         'hyperparams': best_hyperparams,
         'trained_hyperparams': train_sign_hparams,
+        'dead_neurons': best_dead_neurons,
+        'effective_rank': best_effective_rank,
     }
     return parsed_res
 

@@ -85,7 +85,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
         x_train, y_train, x_test, y_test = [], [], [], []
         for idx, _class in enumerate(classes):
             print(f"Loading class {idx} of {len(classes)}")
-            data_file = '/users/kguo32/rl-opt/imagenet/data/classes/' + str(_class) + '.npy'
+            data_file = '/users/kguo32/scratch/data/classes/' + str(_class) + '.npy'
             new_x = np.load(data_file)
             x_train.append(new_x[:train_images_per_class])
             x_test.append(new_x[train_images_per_class:])
@@ -259,7 +259,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True)
+                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True, seed=args.seed)
 
             for epoch_idx in tqdm(range(num_epochs)):
                 rng, _rng = jax.random.split(rng)
@@ -310,7 +310,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
+                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False, seed=args.seed)
 
         final_train_state = runner_state[2]
         ranks             = jnp.stack(rank_list)

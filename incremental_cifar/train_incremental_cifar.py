@@ -50,7 +50,7 @@ class EffectiveRankAgent:
         variables = {"params": params, "batch_stats": batch_stats}
         (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
         features_list = [f for f in features.values() if f is not None]
-        features_list = features_liszt[-2:] # Only take the last two layers for rank computation
+        features_list = features_list[-2:] # Only take the last two layers for rank computation
         erank_losses = [self.effective_rank(f) for f in features_list]
 
         loss_erank = - jnp.stack(erank_losses).mean()
@@ -72,6 +72,16 @@ class EffectiveRankAgent:
 
         loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=labels_one_hot))
         return loss, (logits, features, updates)
+    
+    def hessian_loss(self, params, batch_stats, x, y, train, active_classes):
+        # we need this because get_hvp_fn only accept a scalar loss
+        variables = {"params": params, "batch_stats": batch_stats}
+        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable=['batch_stats'])
+        logits = logits_full[:, active_classes]
+        labels_one_hot = y[:, active_classes]
+
+        loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=labels_one_hot))
+        return loss
     
     def perturb(self, params, perturb_scale, rng):
         return perturb_params(params, rng, perturb_scale)
@@ -309,13 +319,13 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
                 # Hessian computation on test set
                 x_hessian, y_hessian = x_eval[:args.compute_hessian_size], y_eval[:args.compute_hessian_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=100,
+                    order=32,
                     rng_key=rng
                 )
                 # density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
@@ -324,13 +334,13 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
                 # Hessian computation on train set
                 x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=100,
+                    order=32,
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
@@ -357,26 +367,26 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
                 # TODO: Compute the Hessian
                 x_hessian, y_hessian = x_eval[:args.compute_hessian_size], y_eval[:args.compute_hessian_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=100,
+                    order=32,
                     rng_key=rng
                 )
                 density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
 
                 # Hessian computation on train set
                 x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=100,
+                    order=32,
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)

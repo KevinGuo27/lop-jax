@@ -21,7 +21,7 @@ hparams = {
             'weight_decay': weight_decays,
             'compute_hessian': True,
             'compute_hessian_interval': 10,
-            'seed': 2025,
+            'seed': [2035 + i for i in range(20)],
             'n_seeds': 1,
             'platform': 'gpu',
             'debug': False,

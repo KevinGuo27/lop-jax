@@ -2,10 +2,9 @@ from pathlib import Path
 
 exp_name = Path(__file__).stem
 
-lrs = [1e-2, 1e-3, 1e-4]
+lrs = [1e-3, 1e-4]
 lambda0s = [0.95]
 vf_coeffs = [1.0]
-weight_decays = [1e-3, 1e-4, 1e-5]
 
 hparams = {
     'file_name':
@@ -17,14 +16,13 @@ hparams = {
             'total_steps': 10000000,
             'num_envs': 1,
             'num_minibatches': 128,
+            'optimizer': 'muon',
             'update_epochs': 10,
             'num_steps': 2048,
             'vf_coeff': vf_coeffs,
-            'weight_decay': weight_decays,
+            'weight_decay': 0.0,
             'change_every': 2000000,
             'lr': lrs,
-            'beta_1': 0.99,
-            'beta_2': 0.99,
             'lambda0': lambda0s,
             'seed': 2025,
             'n_seeds': 5,

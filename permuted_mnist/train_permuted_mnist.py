@@ -171,6 +171,10 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     optax.add_decayed_weights(args.weight_decay),
                     adam_with_param_counts(learning_rate=lr, eps=1e-5)
                 )
+            elif args.optimizer == 'muon':
+                tx = optax.chain(
+                    optax.contrib.muon(learning_rate=lr, weight_decay=args.weight_decay),
+                )
             else:
                 tx = optax.chain(
                     optax.add_decayed_weights(args.weight_decay),
@@ -346,7 +350,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True)
+                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True, seed = str(args.seed))
 
             runner_state = (
                 x_train,
@@ -419,7 +423,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
+                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False, seed = str(args.seed))
 
         final_train_state = runner_state[2]
         accuracy          = jnp.stack(acc_list)

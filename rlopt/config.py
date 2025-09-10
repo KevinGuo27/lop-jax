@@ -23,7 +23,7 @@ class PolicyHyperparams(Tap):
     update_epochs: int = 10
     num_minibatches: int = 16
     activation: Literal['relu', 'tanh'] = 'relu'
-    optimizer: Literal['adam', 'sgd'] = 'adam'
+    optimizer: Literal['adam', 'sgd', 'muon'] = 'adam'
 
     lr: list[float] = [2.5e-4]
     lambda0: list[float] = [0.95]

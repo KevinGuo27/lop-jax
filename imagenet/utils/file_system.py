@@ -138,18 +138,18 @@ def numpyify(leaf):
         return np.array(leaf)
     return leaf
 
-def plot_hessian_spectrum(grids_train, density_train, grids_test, density_test, task_num, agent_name, at_init: bool = True,save_data: bool = True):
+def plot_hessian_spectrum(grids_train, density_train, grids_test, density_test, task_num, agent_name, at_init: bool = True, save_data: bool = True, seed: str = '2025'):
     grids_np_train = np.array(grids_train)
     density_np_train = np.array(density_train)
     grids_np_test = np.array(grids_test)
     density_np_test = np.array(density_test)
 
-    out_dir = Path("/users/kguo32/rl-opt/imagenet", "hessian", agent_name)
+    out_dir = Path("/users/kguo32/rl-opt/imagenet", "hessian", agent_name, str(seed))
     out_dir.mkdir(parents=True, exist_ok=True)
     if at_init:
-        fname   = out_dir / f"hessian_task_{task_num}_at_init.pdf"
+        fname = out_dir / f"hessian_task_{task_num}_at_init.pdf"
     else:
-        fname   = out_dir / f"hessian_task_{task_num}_end.pdf"
+        fname = out_dir / f"hessian_task_{task_num}_end.pdf"
 
     plt.figure(figsize=(8, 6))
     plt.semilogy(grids_np_train, density_np_train, label=f'Task {task_num} train', color='blue')
@@ -166,7 +166,7 @@ def plot_hessian_spectrum(grids_train, density_train, grids_test, density_test, 
 
     if save_data:
         #add subfolder for data
-        out_dir = Path("/users/kguo32/rl-opt/imagenet", "hessian", "data", agent_name) 
+        out_dir = Path("/users/kguo32/rl-opt/imagenet", "hessian", "data", agent_name, str(seed))
         out_dir.mkdir(parents=True, exist_ok=True)
         fname = out_dir / f"hessian_task_{task_num}_{'init' if at_init else 'end'}.npy"
         np.save(fname, {'grids_train': grids_np_train, 'density_train': density_np_train, 'grids_test': grids_np_test, 'density_test': density_np_test})

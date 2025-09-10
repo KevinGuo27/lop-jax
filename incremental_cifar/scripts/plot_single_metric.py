@@ -53,9 +53,13 @@ def plot_reses(all_reses, metric: str):
                         alpha=0.3,
                         color=colors[color])
 
-    ax.set_xlabel('Task')
-    ax.set_ylabel(metric.replace('_', ' ').capitalize())
-    ax.legend()
+    ax.set_xlabel('Task', fontsize=24)
+    # ax.set_ylabel(metric.replace('_', ' ').capitalize(), fontsize=24)
+    ax.set_ylabel('Accuracy', fontsize=24)
+    ax.tick_params(axis='both', which='major', labelsize=24)
+
+    # Larger legend text
+    ax.legend(fontsize=24)
     fig.tight_layout()
     return fig, ax
 
@@ -69,9 +73,11 @@ if __name__ == "__main__":
     env_name = 'incremental_cifar'
     study_paths = [
         ('L2 + ER', Path('/users/kguo32/rl-opt/incremental_cifar/results/l2_er'), 'green'),
+        ('ER', Path('/users/kguo32/rl-opt/incremental_cifar/results/er'), 'cyan'),
         ('BP', Path('/users/kguo32/rl-opt/incremental_cifar/results/bp'), 'blue'),
         ('L2', Path('/users/kguo32/rl-opt/incremental_cifar/results/l2'), 'yellow'),
-        # ('CBP', Path('/users/kguo32/rl-opt/incremental_cifar/results/cbp2'), 'red'),
+        ('CBP', Path('/users/kguo32/rl-opt/incremental_cifar/results/cbp'), 'red'),
+        ('RESET', Path('/users/kguo32/rl-opt/incremental_cifar/results/reset'), 'black')
     ]
 
     all_reses = []

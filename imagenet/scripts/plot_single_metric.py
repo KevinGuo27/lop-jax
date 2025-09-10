@@ -56,10 +56,13 @@ def plot_reses(all_reses, metric: str):
                         alpha=0.3,
                         color=colors[color])
 
-    ax.set_xlabel('Task')
-    ax.set_ylabel(metric.replace('_', ' ').capitalize())
-    # ax.set_ylabel('Accuracy')
-    ax.legend()
+    ax.set_xlabel('Task', fontsize=24)
+    # ax.set_ylabel(metric.replace('_', ' ').capitalize(), fontsize=24)
+    ax.set_ylabel('Accuracy', fontsize=24)
+    ax.tick_params(axis='both', which='major', labelsize=20)
+
+    # Larger legend text
+    ax.legend(fontsize=20)
     fig.tight_layout()
     return fig, ax
 
@@ -72,11 +75,11 @@ if __name__ == "__main__":
 
     env_name = 'imagenet'
     study_paths = [
-        ('CBP', Path('/users/kguo32/rl-opt/imagenet/results/cbp'), 'red'),
-        ('L2 + ER', Path('/users/kguo32/rl-opt/imagenet/results/l2_er'), 'green'),
-        ('ER', Path('/users/kguo32/rl-opt/imagenet/results/er'), 'cyan'),
-        ('BP', Path('/users/kguo32/rl-opt/imagenet/results/bp'), 'blue'),
-        ('L2', Path('/users/kguo32/rl-opt/imagenet/results/l2'), 'yellow'),
+        ('CBP', Path('/users/kguo32/rl-opt/imagenet/results/cbp_hessian'), 'red'),
+        # ('L2 + ER', Path('/users/kguo32/rl-opt/imagenet/results/l2_er'), 'green'),
+        # ('ER', Path('/users/kguo32/rl-opt/imagenet/results/er'), 'cyan'),
+        ('BP', Path('/users/kguo32/rl-opt/imagenet/results/bp_hessian'), 'blue'),
+        ('L2', Path('/users/kguo32/rl-opt/imagenet/results/l2_hessian'), 'yellow'),
     ]
 
     all_reses = []
@@ -88,7 +91,7 @@ if __name__ == "__main__":
     fig, ax = plot_reses(all_reses, metric=metric)
 
     # You could use plot_name if you want:
-    plot_name = f"{env_name}_{metric}_per_task.pdf"
+    plot_name = f"{env_name}_{metric}_hessian_per_task.pdf"
     save_path = Path('/users/kguo32/rl-opt/imagenet/results') / plot_name
 
     fig.savefig(save_path, bbox_inches='tight')

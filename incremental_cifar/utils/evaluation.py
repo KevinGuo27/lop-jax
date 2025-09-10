@@ -55,7 +55,6 @@ def summarize_all_layers(
     """
     ms = jnp.asarray(ms)
     ranks, eff_ranks, approx_ranks, approx_ranks_abs = batched_summaries(ms)
-    
     # Dead‐neuron count: for each layer, sum abs over rows => per‐column sums, count zeros
     col_sums = jnp.sum(jnp.abs(ms), axis=1)      # shape (num_layers, cols)
     dead_neurons = jnp.sum(col_sums == 0, axis=1).astype(jnp.int32)

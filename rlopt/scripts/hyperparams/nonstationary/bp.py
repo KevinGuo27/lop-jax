@@ -2,7 +2,7 @@ from pathlib import Path
 
 exp_name = Path(__file__).stem
 
-lrs = [1e-3, 1e-4]
+lrs = [1e-2, 1e-3, 1e-4]
 lambda0s = [0.95]
 vf_coeffs = [1.0]
 

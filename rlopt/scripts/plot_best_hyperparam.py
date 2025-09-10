@@ -85,8 +85,6 @@ def plot_reses(all_reses: list[tuple], n_rows: int = 2,
         else:
             # take mean over both
             mean_over_steps = scores.mean(axis=1)
-            # if 'lambda' in study_name:
-            #     mean_over_steps = mean_over_steps[..., 5:, :]
             mean = mean_over_steps.mean(axis=-2)
             std_err = sem(mean_over_steps, axis=-2)
 
@@ -102,7 +100,6 @@ def plot_reses(all_reses: list[tuple], n_rows: int = 2,
                 env_mean, env_std_err = mean[..., env_idx], std_err[..., env_idx]
                 n_seeds = mean_over_steps.shape[-2]
 
-            # env_mean, env_std_err = env_mean[10:], env_std_err[10:]
             x_axis_multiplier = res['step_multiplier'][env_idx]
 
             if len(envs) == 1:
@@ -122,30 +119,10 @@ def plot_reses(all_reses: list[tuple], n_rows: int = 2,
             else:
                 ax.fill_between(x, env_mean - env_std_err, env_mean + env_std_err,
                                 color=colors[color], alpha=0.3)
-                ax.set_xlabel('Environment steps')
-                ax.set_ylabel(f'Online returns ({n_seeds} runs)')
+                ax.set_xlabel('Environment steps', fontsize=24)
+                ax.set_ylabel(f'Online returns ({n_seeds} runs)', fontsize=24)
                 ax.legend()
-            # ax.set_title(env_name_to_title.get(env, env))
-            # if x_upper_lim is not None:
-            #     ax.set_xlim(right=x_upper_lim)
-            # # ax.margins(x=0.015)
-            # ax.locator_params(axis='x', nbins=3, min_n_ticks=3)
-            # ax.locator_params(axis='y', nbins=3)
-            # ax.spines[['right', 'top']].set_visible(False)
 
-    # Customize legend to use square markers
-    # legend = plt.legend(loc='lower right')
-
-    # # Change line in legend to square
-    # for line in legend.get_lines():
-    #     line.set_marker('s')
-    #     line.set_markerfacecolor(line.get_color())
-    #     line.set_linestyle('')
-    #     line.set_markersize(20)  # Increase the marker size
-
-    # fig.supxlabel('Environment steps')
-    # fig.supylabel(f'Online returns ({n_seeds} runs)')
-    #
     fig.tight_layout()
 
     plt.show()
@@ -183,15 +160,9 @@ if __name__ == "__main__":
         ('ER', Path('/users/kguo32/rl-opt/rlopt/results/er'), 'cyan'),
         ('L2', Path('/users/kguo32/rl-opt/rlopt/results/l2'), 'yellow'),
         ('BP', Path('/users/kguo32/rl-opt/rlopt/results/bp'), 'blue'),
-        ('CBP + l2', Path('/users/kguo32/rl-opt/rlopt/results/cbp_l2'), 'red')
+        ('CBP + l2', Path('/users/kguo32/rl-opt/rlopt/results/cbp_l2'), 'red'),
+        # ('BP + muon', Path('/users/kguo32/rl-opt/rlopt/results/bp_muon'), 'red')
     ]
-
-    # best
-    # study_paths = [
-    #     ('PPO + RNN + LD', Path(ROOT_DIR, 'results', f'{env_name}_LD_ppo_best'), 'green'),
-    #     ('PPO + RNN', Path(ROOT_DIR, 'results', f'{env_name}_ppo_best'), 'blue'),
-    #     # ('Memoryless PPO', Path(ROOT_DIR, 'results', f'{env_name}_memoryless_ppo_best'), 'dark gray'),
-    # ]
 
     hyperparam_type = 'per_env'  # (all_env | per_env)
     plot_name = f'{env_name}_{hyperparam_type}'

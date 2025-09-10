@@ -12,7 +12,7 @@
 source ~/pobax_baseline/bin/activate
 
 # Specify the filename
-input_file="../runs/runs_er_hessian.txt"
+input_file="../runs/runs_l2_hessian.txt"
 job_name=$(basename "$input_file" .txt) # Extract the base name of the file without extension
 
 # Read commands from the file and submit each as a separate job
@@ -22,7 +22,7 @@ while IFS= read -r command; do
 #SBATCH --partition=3090-gcondo
 #SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:1
-#SBATCH --exclude=gpu2106,gpu2102,gpu2115,gpu2105,gpu2110
+#SBATCH --exclude=gpu2106,gpu2102,gpu2115,gpu2105,gpu2110,gpu2603,gpu2604
 #SBATCH --time=72:00:00
 #SBATCH --mem=32G
 #SBATCH -J ${job_name}

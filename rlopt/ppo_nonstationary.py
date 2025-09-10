@@ -23,7 +23,7 @@ from rlopt.config import NonStationaryPolicyHyperparams
 from rlopt.envs import load_nonstationary_env, load_env, is_continuous
 from rlopt.models import ActorCritic
 from rlopt.utils.optimizer import adam_with_param_counts
-
+from rlopt.utils.evaluation import summarize_all_layers
 from rlopt.utils.hessian_computation import get_hvp_fn
 from rlopt.utils.lanczos import lanczos_alg
 from rlopt.utils.file_system import plot_hessian_spectrum
@@ -278,6 +278,11 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                     optax.add_decayed_weights(args.weight_decay),
                     optax.sgd(learning_rate=lr),
                 )
+            elif args.optimizer == 'muon':
+                tx = optax.chain(
+                    optax.clip_by_global_norm(args.max_grad_norm),
+                    optax.contrib.muon(learning_rate=lr, adam_b1=args.beta_1, adam_b2=args.beta_2, weight_decay=args.weight_decay),
+                )
             else:
                 tx = optax.chain(
                     optax.clip_by_global_norm(args.max_grad_norm),
@@ -337,6 +342,11 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                 _, last_val, _ = network.apply(train_state.params, last_obs)
 
                 advantages, targets = _calculate_gae(traj_batch, last_val, lambda0, args.gamma)
+
+                # CALCULATE DEAD NEURONS AND EFFECTIVE RANK
+                features_list = [f for f in traj_batch.activations['actor'].values() if f is not None] + \
+                                [f for f in traj_batch.activations['critic'].values() if f is not None]
+                rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
 
                 # UPDATE NETWORK
                 def _update_epoch(update_state, unused):
@@ -447,6 +457,8 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                 # save metrics only every steps_log_freq
                 metric = traj_batch.info
                 metric = jax.tree.map(steps_filter, metric)
+                metric['dead_neurons'] = dead_neurons
+                metric['effective_rank'] = effective_rank
 
                 rng = update_state[-1]
                 if args.debug:
@@ -462,12 +474,15 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                             show_str = "avg episodic return"
                             avg_return_values = jnp.mean(info["returned_episode_returns"][info["returned_episode"]])
                         friction = jnp.mean(info['friction'], axis=(0, 1, 2))[0]
+                        dead_neurons = info['dead_neurons']
+                        effective_rank = info['effective_rank']
                         if len(timesteps) > 0:
                             print(
-                                f"timesteps={timesteps[0]} - {timesteps[-1]}, {show_str}={avg_return_values:.2f}, friction={friction}, "
+                                f"timesteps={timesteps[0]} - {timesteps[-1]}, {show_str}={avg_return_values:.2f}, friction={friction}, dead neurons={dead_neurons}, effective rank={effective_rank}"
                             )
 
                     jax.debug.callback(callback, metric)
+                    # jax.debug.print("dead neurons: {dead_neurons}, effective rank: {effective_rank}", dead_neurons=dead_neurons, effective_rank=effective_rank)
 
                 runner_state = (train_state, env_state, last_obs, rng)
 
