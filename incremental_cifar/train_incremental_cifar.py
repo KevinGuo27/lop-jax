@@ -344,7 +344,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True)
+                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=True, seed=args.seed)
 
             for epoch_idx in tqdm(range(num_epochs)):
                 rng, _rng = jax.random.split(rng)
@@ -390,7 +390,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
-                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
+                jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False, seed=args.seed)
 
         final_train_state = runner_state[2]
         eff_ranks         = jnp.stack(eff_rank_list)

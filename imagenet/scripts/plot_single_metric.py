@@ -76,8 +76,8 @@ if __name__ == "__main__":
     env_name = 'imagenet'
     study_paths = [
         ('CBP', Path('/users/kguo32/rl-opt/imagenet/results/cbp_hessian'), 'red'),
-        # ('L2 + ER', Path('/users/kguo32/rl-opt/imagenet/results/l2_er'), 'green'),
-        # ('ER', Path('/users/kguo32/rl-opt/imagenet/results/er'), 'cyan'),
+        ('L2 + ER', Path('/users/kguo32/rl-opt/imagenet/results/l2_er_hessian'), 'green'),
+        ('ER', Path('/users/kguo32/rl-opt/imagenet/results/er_hessian'), 'cyan'),
         ('BP', Path('/users/kguo32/rl-opt/imagenet/results/bp_hessian'), 'blue'),
         ('L2', Path('/users/kguo32/rl-opt/imagenet/results/l2_hessian'), 'yellow'),
     ]
