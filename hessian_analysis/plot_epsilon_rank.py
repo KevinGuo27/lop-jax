@@ -36,7 +36,13 @@ DATASET_CONFIGS = {
         "default_data_root": Path("/users/kguo32/rl-opt/imagenet/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/imagenet/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/imagenet/hessian/plots"),
-        "agent_results_map": {},  # No mapping needed for ImageNet
+        "agent_results_map": {
+            "bp": "bp_hessian",
+            "cbp": "cbp_hessian", 
+            "l2": "l2_hessian",
+            "l2_er": "l2_er_hessian",
+            "er": "er_hessian"
+        },  # No mapping needed for ImageNet
         "dataset_name": "ImageNet"
     },
     "permuted_mnist": {
@@ -54,11 +60,17 @@ DATASET_CONFIGS = {
         "dataset_name": "Permuted MNIST"
     },
     "incremental_cifar": {
-        "default_agents": ["bp", "cbp", "l2"],
+        "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
         "default_data_root": Path("/users/kguo32/rl-opt/incremental_cifar/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/incremental_cifar/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/incremental_cifar/hessian/plots"),
-        "agent_results_map": {},  # No mapping needed for incremental CIFAR
+        "agent_results_map": {
+            "bp": "bp_hessian",
+            "cbp": "cbp_hessian", 
+            "l2": "l2_hessian",
+            "l2_er": "l2_er_hessian",
+            "er": "er_hessian"
+        },  # No mapping needed for incremental CIFAR
         "dataset_name": "Incremental CIFAR"
     }
 }
