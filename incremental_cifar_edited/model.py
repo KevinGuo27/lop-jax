@@ -59,53 +59,62 @@ class BasicBlock(nn.Module):
     ) -> jnp.ndarray:
         identity = x
 
-        x = nn.Conv(
+        x1 = nn.Conv(
             self.out_channels, 
             (3, 3), 
             self.stride,
             padding='SAME', 
             use_bias=True,
             kernel_init=KERNEL_INIT_RELU, 
-            bias_init=BIAS_INIT_ZEROS
+            bias_init=BIAS_INIT_ZEROS,
+            name='Conv_0'
         )(x)
-        x = nn.BatchNorm(use_running_average=not train, momentum=0.9)(x)
-        x = nn.relu(x)
-        if feature_dict is not None and id is not None:
-            feature_dict[f'{id}/act1'] = x
+        x1 = nn.BatchNorm(use_running_average=not train, momentum=0.9, name='BatchNorm_0')(x1)
+        x1 = nn.relu(x1)
 
-        x = nn.Conv(
+        x2 = nn.Conv(
             self.out_channels, 
             (3, 3), 
             (1, 1),
             padding='SAME', use_bias=True,
             kernel_init=KERNEL_INIT_RELU,
-            bias_init=BIAS_INIT_ZEROS
-        )(x)
-        x = nn.BatchNorm(
+            bias_init=BIAS_INIT_ZEROS,
+            name='Conv_1'
+        )(x1)
+        x2 = nn.BatchNorm(
             use_running_average=not train, 
             momentum=0.9, 
-            scale_init=nn.initializers.zeros if self.zero_init_residual else nn.initializers.ones
-        )(x)
+            scale_init=nn.initializers.zeros if self.zero_init_residual else nn.initializers.ones,
+            name='BatchNorm_1'
+        )(x2)
 
         # downsample identity if needed
         if self.stride != 1 or self.in_channels != self.out_channels:
+            init_identity = identity
             identity = nn.Conv(
                 self.out_channels, 
                 (1, 1), 
                 self.stride,
                 use_bias=True,
                 kernel_init=KERNEL_INIT_RELU,
-                bias_init=BIAS_INIT_ZEROS
+                bias_init=BIAS_INIT_ZEROS,
+                name='Identity'
             )(identity)
-            identity = nn.BatchNorm(use_running_average=not train, momentum=0.9)(identity)
+            identity = nn.BatchNorm(use_running_average=not train, momentum=0.9, name='BatchNorm_2')(identity)
+            x3 = x2 + identity
+            x3 = nn.relu(x3)
+            if feature_dict is not None and id is not None:
+                feature_dict[f'{self.name}'] = {'BatchNorm_0': None, 'BatchNorm_1': None, 'BatchNorm_2': None, 'Conv_0': None, 'Conv_1': x1, 'Identity': init_identity}
+            return x3
+
 
         # residual add + final relu
-        x = x + identity
-        x = nn.relu(x)
+        x3 = x2 + identity
+        x3 = nn.relu(x3)
         if feature_dict is not None and id is not None:
-            feature_dict[f'{id}/act2'] = x
+            feature_dict[f'{self.name}'] = {'BatchNorm_0': None, 'BatchNorm_1': None, 'Conv_0': None, 'Conv_1': x2}
 
-        return x
+        return x3
 
 
 class ResNet18(nn.Module):
@@ -131,11 +140,13 @@ class ResNet18(nn.Module):
             padding='SAME', 
             use_bias=True,
             kernel_init=KERNEL_INIT_RELU,
-            bias_init=BIAS_INIT_ZEROS
+            bias_init=BIAS_INIT_ZEROS,
+            name='Conv_0'
         )(x)
-        x = nn.BatchNorm(use_running_average=not train, momentum=0.9)(x)
+        x = nn.BatchNorm(use_running_average=not train, momentum=0.9, name='BatchNorm_0')(x)
         x = nn.relu(x)
-        feature_dict['conv1'] = x
+        feature_dict['BatchNorm_0'] = None
+        feature_dict['Conv_0'] = None
 
         # Helper to build a stack of blocks
         def make_layer(in_ch: int, out_ch: int, blocks: int, stride: int):
@@ -153,16 +164,35 @@ class ResNet18(nn.Module):
 
         # Global average pool + flatten
         x = jnp.mean(x, axis=(1, 2))
-        feature_dict['avgpool'] = x
 
         # Final classifier - no linear in linen, use Dense
         x = nn.Dense(
-            self.num_classes,
+            512,
             use_bias=True,
             kernel_init=KERNEL_INIT_LINEAR, 
-            bias_init=BIAS_INIT_ZEROS
+            bias_init=BIAS_INIT_ZEROS,
+            name='Dense_0'
         )(x)
-        return x, feature_dict
+        x1 = nn.relu(x)
+        x2 = nn.Dense(
+            512,
+            use_bias=True,
+            kernel_init=KERNEL_INIT_LINEAR, 
+            bias_init=BIAS_INIT_ZEROS,
+            name='Dense_1'
+        )(x1)
+        x2 = nn.relu(x2)
+        feature_dict['Dense_0'] = None
+        feature_dict['Dense_1'] = x1
+        feature_dict['Dense_2'] = x2
+        x3 = nn.Dense(
+            self.num_classes, 
+            use_bias=True,
+            kernel_init=KERNEL_INIT_LINEAR, 
+            bias_init=BIAS_INIT_ZEROS,
+            name='Dense_2'
+        )(x2)
+        return x3, feature_dict
 
 
 def build_resnet18(num_classes: int) -> ResNet18:

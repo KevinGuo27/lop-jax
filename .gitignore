@@ -61,6 +61,8 @@ cover/
 *.mo
 *.pot
 
+incremental_cifar_edited/data/
+
 
 # Django stuff:
 *.log
@@ -216,5 +218,13 @@ impl_nnx/plots/
 impl_nnx/agents.py
 impl_nnx/incremental_cifar_experiment_jax_agents.py
 incremental_cifar_edited/data/
-
+incremental_cifar_edited/__pycache__/
+incremental_cifar_edited/results/
+incremental_cifar_edited/bp_logs_cifar/
+incremental_cifar_edited/cbp_logs_cifar/
+incremental_cifar_edited/l2_logs_cifar/
+incremental_cifar_edited/l2er_logs_cifar/
+incremental_cifar_edited/reset_logs_cifar/
+incremental_cifar_edited/er_logs_cifar/
+incremental_cifar_edited/old_code/
 incremental_cifar_edited/slurm_logs/

@@ -1,0 +1,16 @@
+results/
+data/
+__pycache__/
+
+slurm_analysis_cifar/
+slurm_logs_cifar/
+post_run_analysis_jax.py
+train_incremental_cifar_v2.py
+
+bp_logs_cifar/
+post_run_cifar/
+l2_logs_cifar/
+cbp_logs_cifar/
+l2er_logs_cifar/
+
+old_code/

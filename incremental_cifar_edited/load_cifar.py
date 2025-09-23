@@ -8,19 +8,11 @@ def cifar100():
     """
     Loads CIFAR-100 and saves it in a pickle file
     """
-    mean = (0.5071, 0.4865, 0.4409)
-    std = (0.2673, 0.2564, 0.2762)
-
     train_transform = transforms.Compose([
-        transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(15),
         transforms.ToTensor(),
-        transforms.Normalize(mean, std),
     ])
     test_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(mean, std),
     ])
 
     trainset = torchvision.datasets.CIFAR100(

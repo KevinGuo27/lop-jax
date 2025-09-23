@@ -2,11 +2,16 @@ from functools import partial
 
 import chex
 from flax import struct
+from flax.training import train_state
 from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
 from optax import ScaleByAdamState, EmptyState
 from optax.transforms._accumulation import TraceState
+from typing import Any
+
+class TrainState(train_state.TrainState):
+    batch_stats: Any
 
 
 def num_top_mask(mask, vals, num_top):
@@ -70,30 +75,31 @@ class ContinualBackpropTrainState(TrainState):
     acc_num_replacements: struct.field(pytree_node=True)
 
     @classmethod
-    def create(cls, *, apply_fn, params, tx, **kwargs):
-        og_ts = TrainState.create(apply_fn=apply_fn, params=params, tx=tx, **kwargs)
+    def create(cls, *, apply_fn, params, tx, batch_stats, **kwargs):
+        og_ts = TrainState.create(apply_fn=apply_fn, params=params, tx=tx, batch_stats=batch_stats, **kwargs)
 
         def is_util_leaf(tree):
-            return ('kernel' in tree) and ('bias' in tree)
+            return ('kernel' in tree) and ('bias' in tree) or (('scale' in tree) and ('bias' in tree))
 
         def filter_input_and_bias(k, x):
-            if k[-1].key[-1] != '0' and k[-1].key != 'log_std':
+            if k[-1].key[-1] != '0' and k[-1].key != 'log_std' and 'BatchNorm' not in k[-1].key:
                 # we do shape[0], since we index layer + 1
                 n_dim = len(x['kernel'].shape)
+                # jax.debug.print('shape: {shape}', shape=x['kernel'].shape)
                 if n_dim == 2:
                     return jnp.zeros(x['kernel'].shape[0])
                 else:
                     return jnp.zeros(x['kernel'].shape[2])
 
         def layer_count(k, x):
-            if k[-1].key[-1] != '0' and k[-1].key != 'log_std':
+            if k[-1].key[-1] != '0' and k[-1].key != 'log_std' and 'BatchNorm' not in k[-1].key:
                 # we do shape[0], since we index layer + 1
                 return jnp.zeros(1)
 
         # we init our utilities.
-        utils = jax.tree_util.tree_map_with_path(filter_input_and_bias, og_ts.params['params'], is_leaf=is_util_leaf)
-        ages = jax.tree_util.tree_map_with_path(filter_input_and_bias, og_ts.params['params'], is_leaf=is_util_leaf)
-        acc_num_replacements = jax.tree_util.tree_map_with_path(layer_count, og_ts.params['params'], is_leaf=is_util_leaf)
+        utils = jax.tree_util.tree_map_with_path(filter_input_and_bias, og_ts.params, is_leaf=is_util_leaf)
+        ages = jax.tree_util.tree_map_with_path(filter_input_and_bias, og_ts.params, is_leaf=is_util_leaf)
+        acc_num_replacements = jax.tree_util.tree_map_with_path(layer_count, og_ts.params, is_leaf=is_util_leaf)
 
         return ContinualBackpropTrainState(
             step=og_ts.step,
@@ -104,6 +110,7 @@ class ContinualBackpropTrainState(TrainState):
             utils=utils,
             ages=ages,
             acc_num_replacements=acc_num_replacements,
+            batch_stats=og_ts.batch_stats,
             **kwargs,
         )
 
@@ -134,7 +141,7 @@ class ContinualBackpropTrainState(TrainState):
             if u is None:
                 return u
 
-            target_param_set = self.params['params']
+            target_param_set = self.params
             for k in keys[:-1]:
                 target_param_set = target_param_set[k.key]
 
@@ -150,8 +157,8 @@ class ContinualBackpropTrainState(TrainState):
 
         output_weight_mags = jax.tree_util.tree_map_with_path(get_output_weight_mags, self.utils)
         # Calculate our new utils
-        print('activations:', activations)
-        print('output_weight_mags:', output_weight_mags)
+        # print('activations:', activations)
+        # print('output_weight_mags:', output_weight_mags)
         u = jax.tree.map(lambda h, w: jnp.abs(h) * w, activations, output_weight_mags)
         new_utils = jax.tree.map(lambda ut, u: decay_rate * ut + (1 - decay_rate) * u, self.utils, u)
 
@@ -183,12 +190,13 @@ class ContinualBackpropTrainState(TrainState):
             final_key = keys[-1].key  # either kernel or bias or log_std, which we ignore
             if final_key == 'log_std':
                 return og_params
-
             layer_key = keys[-2].key
+            if 'BatchNorm' in layer_key or 'Identity' in layer_key:
+                return og_params
 
             rmask = replacement_mask
             # we have 1: here b/c of 'params' key
-            for k in keys[1:-2]:
+            for k in keys[:-2]:
                 rmask = rmask[k.key]
 
             # gain (relu) * sqrt(3 / in_features)
@@ -213,15 +221,15 @@ class ContinualBackpropTrainState(TrainState):
             next_layer_key = f'{network_id}_{int(layer_num) + 1}'
 
             # This should filter out the last layer
-            if next_layer_key in rmask and next_layer_key != 'layer_3':
+            if next_layer_key in rmask:
                 in_mask = rmask[next_layer_key]
                 if final_key == 'kernel':
                     if len(og_params.shape) == 2:
                         in_mask = in_mask[None, ...].repeat(og_params.shape[0], axis=0)
                     else:
                         in_mask = in_mask[None, ...].repeat(og_params.shape[2], axis=0)
-                        in_mask = in_mask[None, ...].repeat(og_params.shape[1], axis=0)
-                        in_mask = in_mask[None, ...].repeat(og_params.shape[0], axis=0)
+                        # in_mask = in_mask[None, ...].repeat(og_params.shape[1], axis=0)
+                        # in_mask = in_mask[None, ...].repeat(og_params.shape[0], axis=0)
                     updated_params = (1 - in_mask) * updated_params
                     if rand_init_kernel:
                         rng, _rng = jax.random.split(rng)

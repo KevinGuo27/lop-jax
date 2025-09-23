@@ -74,8 +74,8 @@ def hvp(loss, params, batch, v):
   Returns:
     hvp: array of shape [num_params] equal to Hv where H is the hessian.
   """
-  x_in, y_in = batch
-  loss_fn = lambda x: loss(x, x_in, y_in)
+  batch_stats, x_in, y_in, train, active_classes = batch
+  loss_fn = lambda x: loss(x, batch_stats, x_in, y_in, train, active_classes)
   return jvp(grad(loss_fn), [params], [v])[1]
 
 
@@ -126,7 +126,8 @@ def get_hvp_fn(loss, params, batches, batch_size=100):
     unravel: Maps v back to the form reprented as params.
     num_params: Total number of parameters in params (int).
   """
-  x_all, y_all = batches
+  # x_all, y_all = batches
+  batch_stats, x_all, y_all, train, active_classes = batches
   flat_params, unravel = ravel_pytree(params)
 
   @jit
@@ -151,7 +152,7 @@ def get_hvp_fn(loss, params, batches, batch_size=100):
     # TODO(gilmer): Get rid of this for loop by using either vmap or lax.fori.
     count = 0
     for batch_idx in range(0, x_all.shape[0], batch_size):
-      batch = (x_all[batch_idx:batch_idx + batch_size], y_all[batch_idx:batch_idx + batch_size])
+      batch = (batch_stats, x_all[batch_idx:batch_idx + batch_size], y_all[batch_idx:batch_idx + batch_size], train, active_classes)
       partial_vp = jitted_hvp(params, batch, v)
       hessian_vp = _tree_sum(hessian_vp, partial_vp)
       count += 1

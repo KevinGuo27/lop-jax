@@ -6,14 +6,14 @@ from tap import Tap
 class Hyperparams(Tap):
     study_name: str = 'test'
     seed: int = 2024
-    debug: bool = True
+    debug: bool = False
     platform: Literal['cpu', 'gpu'] = 'gpu'
     n_seeds: int = 1
 
 # CURRENT SET-UP: BASE DL / L2 AGENT 
 class IncrementalCIFARHyperparams(Hyperparams):
     env: str = 'incremental_cifar'
-    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2' # base DL uses l2
+    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2' 
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
     lr: list[float] = [0.1]
@@ -29,11 +29,11 @@ class IncrementalCIFARHyperparams(Hyperparams):
     momentum: float = 0.9
     # Effective Rank
     er_lr: list[float] = [0.01]
-    er_batch: int = 1
+    er_batch: int = 5
     er_step: int = 1
 
-    # SVM
-    svm: bool = False
+    # RESET NETWORK
+    reset: bool = False  # Do we reset the network after each task?
 
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?

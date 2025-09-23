@@ -6,10 +6,10 @@ from time import time
 import optax
 import numpy as np
 from tqdm import tqdm
-from modified_resnet_linen_dict import build_resnet18
+from incremental_cifar.model import build_resnet18
 from pathlib import Path
 from collections import deque
-from utils.evaluation import summarize_all_layers
+from incremental_cifar.utils.evaluation import summarize_all_layers
 import optax
 from flax.training import train_state
 from flax.training.train_state import TrainState
@@ -18,14 +18,14 @@ import inspect
 import chex
 import jax
 import jax.numpy as jnp
-from config import IncrementalCIFARHyperparams
-from utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
+from incremental_cifar.config import IncrementalCIFARHyperparams
+from incremental_cifar.utils.file_system import get_results_path, numpyify, plot_hessian_spectrum
 import orbax.checkpoint
-from utils.optimizer import l2_regularization, adam_with_param_counts
-from utils.hessian_computation import get_hvp_fn
-from utils.lanczos import lanczos_alg
-from utils.density import tridiag_to_density, tridiag_to_density_and_erank
-from cbp import ContinualBackpropTrainState
+from incremental_cifar.utils.optimizer import l2_regularization, adam_with_param_counts
+from incremental_cifar.utils.hessian_computation import get_hvp_fn
+from incremental_cifar.utils.lanczos import lanczos_alg
+from incremental_cifar.utils.density import tridiag_to_density, tridiag_to_density_and_erank
+from incremental_cifar.cbp import ContinualBackpropTrainState
 from typing import Any, Callable, Optional, Tuple
 
 # create train state as we are using ResNet with BatchNorm
@@ -49,37 +49,40 @@ class EffectiveRankAgent:
     def effective_rank_loss(self, params, batch_stats, x):
         variables = {"params": params, "batch_stats": batch_stats}
         (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
-        logits = logits_full[:, active_classes]
+        features_list = [f for f in features.values() if f is not None]
+        features_list = features_list[-2:] # Only take the last two layers for rank computation
+        erank_losses = [self.effective_rank(f) for f in features_list]
 
-        erank_losses = [self.effective_rank(f) for f in features.values() if f is not None]
-        
-        erank_losses = erank_losses[-1:]  # Only take the last layer for rank computation
         loss_erank = - jnp.stack(erank_losses).mean()
-        return loss_erank
+        return loss_erank, updates
 
     def predict(self, params, batch_stats, x, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
         
-        logits_full, features = self.network.apply(variables, x, train=train)
+        logits_full, features = self.network.apply(variables, x, train=train) # train should be False (evaluation)
         logits = logits_full[:, active_classes]
 
         return logits, features
 
     def loss(self, params, batch_stats, x, y, train, active_classes):
         variables = {"params": params, "batch_stats": batch_stats}
-        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable='batch_stats')
-        
+        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable=['batch_stats'])
         logits = logits_full[:, active_classes]
-        class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-        sliced_y = class_to_idx[y]
+        labels_one_hot = y[:, active_classes]
 
-        jax.debug.print("Logits shape: {shape}", shape=jnp.shape(logits))
-        jax.debug.print("Sliced labels shape: {shape}", shape=jnp.shape(sliced_y))
-        jax.debug.print("Sliced labels (training): {labels}", labels=sliced_y)
-
-        loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=sliced_y))
+        loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=labels_one_hot))
         return loss, (logits, features, updates)
+    
+    def hessian_loss(self, params, batch_stats, x, y, train, active_classes):
+        # we need this because get_hvp_fn only accept a scalar loss
+        variables = {"params": params, "batch_stats": batch_stats}
+        (logits_full, features), updates = self.network.apply(variables, x, train=True, mutable=['batch_stats'])
+        logits = logits_full[:, active_classes]
+        labels_one_hot = y[:, active_classes]
 
+        loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=labels_one_hot))
+        return loss
+    
     def perturb(self, params, perturb_scale, rng):
         return perturb_params(params, rng, perturb_scale)
 
@@ -98,7 +101,7 @@ def perturb_params(params, rng, scale):
 def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
     network = build_resnet18(num_classes=100)
 
-    num_tasks = args.num_tasks
+    num_tasks = 20
     train_images_per_class = 500
     test_images_per_class = 100
     images_per_class = train_images_per_class + test_images_per_class
@@ -108,7 +111,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
     all_x_train, all_y_train, all_x_test, all_y_test = None, None, None, None
 
-    with open('./data/cifar100.pkl', 'rb') as f:
+    with open('/users/tserapio/lop-jax/incremental_cifar/data/cifar100-onehot.pkl', 'rb') as f:
         data = pickle.load(f)
 
     all_x_train_np, all_y_train_np = data['x_train'], data['y_train']
@@ -122,7 +125,7 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
     num_classes = 100
 
     rng, order_key = jax.random.split(rng)
-    class_order = np.random.permutation(num_classes)
+    class_order = jax.random.permutation(order_key, num_classes)
 
     def train(lr, er_lr, rng):
         agent = EffectiveRankAgent(network)
@@ -134,14 +137,25 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
         tx = optax.chain(
             optax.add_decayed_weights(args.weight_decay),
-            optax.sgd(learning_rate=0.1, momentum=args.momentum)
+            optax.sgd(learning_rate=lr, momentum=args.momentum)
         )
+
+        all_results = {
+            'accuracy': [],
+            'accuracy_eval': [],
+            'effective_rank': [],
+            'dead_neurons': [],
+            'rank': [],
+            'approx_rank': [],
+            'loss': [],
+        }
 
         if args.cont_backprop:
             train_state = ContinualBackpropTrainState.create(
                 apply_fn=network.apply,
                 params=network_params,
-                tx=tx
+                tx=tx,
+                batch_stats=batch_stats,
             )
         else:
             train_state = TrainState.create(
@@ -157,18 +171,16 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     minibatch_x = jax.lax.dynamic_slice_in_dim(x, mini_batch_idx, args.mini_batch_size, axis=0)
                     minibatch_y = jax.lax.dynamic_slice_in_dim(y, mini_batch_idx, args.mini_batch_size, axis=0)
 
-                    (loss, updates), grads
-
-                    logits, activations = agent.predict(params=train_state.params, batch_stats=train_state.batch_stats, x=minibatch_x, train=True, active_classes=active_classes)
+                    (loss, (logits, activations, updates)), grads = jax.value_and_grad(agent.loss, has_aux=True)(
+                        train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes
+                    )
 
                     # accuracy 
                     pred_labels = jnp.argmax(logits, axis=-1)
 
-                    class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-                    true_minibatch_y_labels = class_to_idx[minibatch_y]
-                    accuracy = jnp.mean(pred_labels == true_minibatch_y_labels)
-
-                    grads, updates = jax.grad(agent.loss, has_aux=True)(train_state.params, train_state.batch_stats, minibatch_x, minibatch_y, True, active_classes)
+                    labels_onehot = minibatch_y[:, active_classes]
+                    true_labels  = jnp.argmax(labels_onehot, axis=-1)
+                    accuracy = jnp.mean(pred_labels == true_labels)
 
                     # updates
                     train_state = train_state.apply_gradients(grads=grads)
@@ -190,11 +202,14 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                 # ignore this
                 def update_erank(runner_state, _):
                     x, train_state, rng = runner_state
-                    er_loss = agent.effective_rank_loss(train_state, x)
-                    grads = jax.grad(agent.effective_rank_loss)(train_state, x)
+                    (er_loss, batch_updates), grads = jax.value_and_grad(
+                        agent.effective_rank_loss, has_aux=True
+                    )(train_state.params, train_state.batch_stats, x)
+
                     updates = jax.tree_util.tree_map(lambda g: -er_lr * g, grads)
                     new_params = optax.apply_updates(train_state.params, updates)
                     train_state = train_state.replace(params=new_params)
+                    train_state = train_state.replace(batch_stats=batch_updates["batch_stats"])
                     return (x, train_state, rng), er_loss
                         
                 x, y, train_state, rng = runner_state                
@@ -239,16 +254,14 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             # Evaluate the model on the current task
             logits, features = agent.predict(params=train_state.params, batch_stats=train_state.batch_stats, x=x_eval, train=False, active_classes=active_classes)
-            jax.debug.print("Logits shape (evaluation): {shape}", shape=jnp.shape(logits))
-            jax.debug.print("Logits (evaluation): {logits}", logits=logits)
-
             features_list = [f for f in features.values() if f is not None]
-            features_list = features_list[-1:] # Only take the last layer for rank computation
+            features_list = features_list[-2:] # Only take the last layer for rank computation
             rank, effective_rank, approx_rank, approx_rank_abs, dead_neurons = summarize_all_layers(features_list)
             
             pred_labels = jnp.argmax(logits, axis=-1)
-            class_to_idx = jnp.full((100,), -1, dtype=jnp.int32).at[active_classes].set(jnp.arange(len(active_classes)))
-            true_labels = class_to_idx[y_eval] # this remapping is necessary because model's logits are now only for the active classes
+            
+            labels_onehot_eval = y_eval[:, active_classes]
+            true_labels  = jnp.argmax(labels_onehot_eval, axis=-1)
 
             accuracy_eval = jnp.mean(pred_labels == true_labels)
 
@@ -258,9 +271,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     "Rank: {r}, EffRank: {er}, ApproxRank: {ar}, DeadNeurons: {dn}",
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
                 )
-                # jax.debug.print("True labels: {tl}", tl=true_labels)
-                # jax.debug.print("Predicted labels: {pl}", pl=pred_labels)
-                # jax.debug.print("Active Classes: {ac}", ac=active_classes)
                 
             res_info = {
                 'loss': loss,
@@ -274,11 +284,33 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                 
             return runner_state, res_info
 
-        loss_list, acc_list, acc_eval_list, rank_list, eff_rank_list, approx_rank_list, dead_neurons_list = [], [], [], [], [], [], []
-        update_task = jax.jit(update_task, static_argnums=(1,2,3,))
+        acc_list, acc_eval_list, eff_rank_list, dead_neurons_list = [], [], [], []
+        update_task = jax.jit(update_task, static_argnums=(1,2,3))
+        true_train_labels = jnp.argmax(all_y_train, axis=1)
+        true_test_labels = jnp.argmax(all_y_test, axis=1)
+
+        per_task_train_states = []
+        
         for task in range(num_tasks):
+            # RESET NETWORK IF NEEDED
+            if args.reset and not args.cont_backprop:
+                jax.debug.print("Resetting network after task {t}", t=task)
+                rng, _rng = jax.random.split(rng)
+                variables = network.init(rng, dummy_input, train=True)
+                network_params = variables['params']
+                batch_stats = variables['batch_stats']
+                tx = optax.chain(
+                    optax.add_decayed_weights(args.weight_decay),
+                    optax.sgd(learning_rate=lr, momentum=args.momentum)
+                )
+                train_state = TrainState.create(
+                    apply_fn=network.apply,
+                    params=network_params,
+                    tx=tx,
+                    batch_stats=batch_stats
+                )
+            
             num_classes_seen_so_far = (task + 1) * classes_per_task
-            jax.debug.print("Task {t}: Training on classes {c}", t=task, c=num_classes_seen_so_far)
             
             examples_per_epoch = train_images_per_class * num_classes_seen_so_far
 
@@ -286,29 +318,27 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             active_classes = class_order[: (task + 1) * classes_per_task] # fix this to be tuple before getting passed on
             jax.debug.print("Active classes (init): {ac}", ac=active_classes)
-            
-            # mask training and test set only to active classes
-            train_mask = jnp.isin(all_y_train, active_classes)
-            x_train = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
-            y_train = jnp.compress(train_mask, all_y_train, axis=0) # axis 0 to select images
-            # Similarly for test set
-            test_mask = jnp.isin(all_y_test, active_classes)
-            x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
-            y_eval = jnp.compress(test_mask, all_y_test, axis=0) # axis 0 to select images
 
-            active_classes = tuple(active_classes)  # convert to tuple for static_argnums
-            
+            train_mask = jnp.isin(true_train_labels, active_classes)
+            y_train = all_y_train[train_mask, :]
+            x_train = jnp.transpose(jnp.compress(train_mask, all_x_train, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
+            test_mask = jnp.isin(true_test_labels, active_classes)
+            y_eval = all_y_test[test_mask, :]
+            x_eval = jnp.transpose(jnp.compress(test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))  # transpose to (N, H, W, C)
+
+            active_classes = tuple(int(x) for x in active_classes)
+
             #compute hessian at the start of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
                 # Hessian computation on test set
                 x_hessian, y_hessian = x_eval[:args.compute_hessian_size], y_eval[:args.compute_hessian_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=100,
+                    order=32,
                     rng_key=rng
                 )
                 # density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
@@ -317,13 +347,13 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
                 # Hessian computation on train set
                 x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=100,
+                    order=32,
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
@@ -331,36 +361,6 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             for epoch_idx in tqdm(range(num_epochs)):
                 rng, _rng = jax.random.split(rng)
-
-                # set the LR here by editing train_state
-                if epoch_idx == 0:
-                    train_state = train_state.replace(
-                        tx=optax.chain(
-                            optax.add_decayed_weights(args.weight_decay),
-                            optax.sgd(learning_rate=0.1, momentum=args.momentum)
-                        )
-                    )
-                elif epoch_idx == 60:
-                    train_state = train_state.replace(
-                        tx=optax.chain(
-                            optax.add_decayed_weights(args.weight_decay),
-                            optax.sgd(learning_rate=0.02, momentum=args.momentum)
-                        )
-                    )
-                elif epoch_idx == 120:
-                    train_state = train_state.replace(
-                        tx=optax.chain(
-                            optax.add_decayed_weights(args.weight_decay),
-                            optax.sgd(learning_rate=0.004, momentum=args.momentum)
-                        )
-                    )
-                elif epoch_idx == 160:
-                    train_state = train_state.replace(
-                        tx=optax.chain(
-                            optax.add_decayed_weights(args.weight_decay),
-                            optax.sgd(learning_rate=0.0008, momentum=args.momentum)
-                        )
-                    )
 
                 runner_state = (
                     x_train,
@@ -371,61 +371,64 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
                     rng)
                 runner_state, res_info = update_task(runner_state, task, examples_per_epoch, active_classes)
                 x_train, y_train, train_state, rng = runner_state
-            rank_list.append(res_info['rank'])
             eff_rank_list.append(res_info['effective_rank'])
-            approx_rank_list.append(res_info['approx_rank'])
             dead_neurons_list.append(res_info['dead_neurons'])
             acc_list.append(res_info['accuracy'])
             acc_eval_list.append(res_info['accuracy_eval'])
-            loss_list.append(res_info['loss'])
+            
+            def squeeze_leading_dim(x):
+                return x[0] if x.shape[0] == 1 else x
+            
+            # this is how we checkpoint
+            per_task_train_states.append({
+                'params': jax.tree.map(squeeze_leading_dim, train_state.params),
+                'batch_stats': jax.tree.map(squeeze_leading_dim, train_state.batch_stats)
+            })
 
             #compute hessian at the end of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
                 # TODO: Compute the Hessian
                 x_hessian, y_hessian = x_eval[:args.compute_hessian_size], y_eval[:args.compute_hessian_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=100,
+                    order=32,
                     rng_key=rng
                 )
                 density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
 
                 # Hessian computation on train set
                 x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
-                hvp_fn, unravel, num_params = get_hvp_fn(agent.loss, train_state.params, (x_hessian, y_hessian))
+                hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=100,
+                    order=32,
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 jax.debug.callback(plot_hessian_spectrum, grids_train, density_train, grids_test, density_test, task, args.agent, at_init=False)
 
         final_train_state = runner_state[2]
-        ranks             = jnp.stack(rank_list)
         eff_ranks         = jnp.stack(eff_rank_list)
-        approx_ranks      = jnp.stack(approx_rank_list)
         dead_neurons      = jnp.stack(dead_neurons_list)
         acc               = jnp.stack(acc_list)
         acc_eval          = jnp.stack(acc_eval_list)
-        loss              = jnp.stack(loss_list)
 
         res_info = {
-            'rank':            ranks,
             'effective_rank':  eff_ranks,
-            'approx_rank':     approx_ranks,
             'dead_neurons':    dead_neurons,
-            'train_state':     final_train_state,
+            'train_state':     final_train_state, # final train state
+            'per_task_train_states': per_task_train_states, # train state after each task 
             'accuracy':        acc,
             'accuracy_eval':   acc_eval,
-            'loss':            loss,
+            'rng': rng,
+            'class_order': class_order
         }
         return res_info
     return train
@@ -463,6 +466,9 @@ if __name__ == "__main__":
     print('Total runtime:', total_runtime)
 
     final_train_state = out['train_state']
+    train_states_per_task = out['per_task_train_states']
+    rng_used = out['rng']
+    class_order = out['class_order']
 
     results_path = get_results_path(args, return_npy=False)  # returns a results directory
 
@@ -471,7 +477,10 @@ if __name__ == "__main__":
         'out': out,
         'args': args.as_dict(),
         'total_runtime': total_runtime,
-        'final_train_state': final_train_state
+        'final_train_state': final_train_state, 
+        'train_states_per_task': train_states_per_task,
+        'rng_used': args.seed,
+        'class_order': class_order
     }
 
     all_results = jax.tree.map(numpyify, all_results)
