@@ -19,7 +19,7 @@ class ImagenetHyperparams(Hyperparams):
     optimizer: Literal['adam', 'sgd'] = 'sgd'
     weight_decay: float = 0.001 # Do we use L2 regularization?
     to_perturb: bool = False  # Whether to perturb the input data
-    perturb_scale: int = 1e-5
+    perturb_scale: float = 1e-5
     mini_batch_size: int = 100
     no_anneal_lr: bool = True
     max_grad_norm: float = 1e9

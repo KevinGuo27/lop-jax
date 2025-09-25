@@ -6,6 +6,7 @@ import numpy as np
 from matplotlib import rc
 import matplotlib.pyplot as plt
 from scipy.stats import sem
+import matplotlib.cm as cm
 
 
 from definitions import ROOT_DIR
@@ -15,21 +16,21 @@ rc('axes', unicode_minus=False)
 
 # rc('text', usetex=True)
 
-colors = {
-    'pink': '#ff96b6',
-    'red': '#df5b5d',
-    'orange': '#DD8453',
-    'yellow': '#f8de7c',
-    'green': '#3FC57F',
-    'cyan': '#48dbe5',
-    'blue': '#3180df',
-    'purple': '#9d79cf',
-    'brown': '#886a2c',
-    'white': '#ffffff',
-    'light gray': '#d5d5d5',
-    'dark gray': '#666666',
-    'black': '#000000'
-}
+# colors = {
+#     'pink': '#ff96b6',
+#     'red': '#df5b5d',
+#     'orange': '#DD8453',
+#     'yellow': '#f8de7c',
+#     'green': '#3FC57F',
+#     'cyan': '#48dbe5',
+#     'blue': '#3180df',
+#     'purple': '#9d79cf',
+#     'brown': '#886a2c',
+#     'white': '#ffffff',
+#     'light gray': '#d5d5d5',
+#     'dark gray': '#666666',
+#     'black': '#000000'
+# }
 
 env_name_to_title = {
     'rocksample_15_15': 'RockSample (15, 15)',
@@ -109,19 +110,22 @@ def plot_reses(all_reses: list[tuple], n_rows: int = 2,
             x = np.arange(env_mean.shape[0]) * x_axis_multiplier
             x_upper_lim = env_name_to_x_upper_lim.get(env, None)
 
-            ax.plot(x, env_mean, label=study_name, color=colors[color])
+            # Use different transparency for L2 + ER vs others
+            alpha_value = 1.0 if study_name == "L2 + ER" else 0.6
+            ax.plot(x, env_mean, label=study_name, color=color, alpha=alpha_value)
             if individual_runs:
                 # -2 index is seeds.
                 for j in range(mean_over_steps.shape[-2]):
                     alpha = 1 / mean_over_steps.shape[-2]
                     m = mean_over_steps[..., j, env_idx] if isinstance(mean_over_steps, np.ndarray) else mean_over_steps[env_idx][..., j]
-                    ax.plot(x, m, color=colors[color], alpha=alpha)
+                    ax.plot(x, m, color=color, alpha=alpha)
             else:
                 ax.fill_between(x, env_mean - env_std_err, env_mean + env_std_err,
-                                color=colors[color], alpha=0.3)
+                                color=color, alpha=alpha_value * 0.25)
                 ax.set_xlabel('Environment steps', fontsize=24)
                 ax.set_ylabel(f'Online returns ({n_seeds} runs)', fontsize=24)
-                ax.legend()
+                ax.tick_params(axis='both', which='major', labelsize=20)
+                # ax.legend(fontsize=20)
 
     fig.tight_layout()
 
@@ -154,13 +158,16 @@ def find_file_in_dir(file_name: str, base_dir: Path) -> Path:
 if __name__ == "__main__":
     env_name = 'slippery_ant'
 
+    # Get set2 color palette
+    paired_colors = cm.Paired(np.linspace(0, 1, 12))
     # normal
     study_paths = [
-        ('L2 + ER', Path('/users/kguo32/rl-opt/rlopt/results/l2_er'), 'green'),
-        ('ER', Path('/users/kguo32/rl-opt/rlopt/results/er'), 'cyan'),
-        ('L2', Path('/users/kguo32/rl-opt/rlopt/results/l2'), 'yellow'),
-        ('BP', Path('/users/kguo32/rl-opt/rlopt/results/bp'), 'blue'),
-        ('CBP + l2', Path('/users/kguo32/rl-opt/rlopt/results/cbp_l2'), 'red'),
+        ('L2 + ER', Path('/users/kguo32/rl-opt/rlopt/results/l2_er'), paired_colors[1]),
+        ('ER', Path('/users/kguo32/rl-opt/rlopt/results/er'), paired_colors[3]),
+        ('L2', Path('/users/kguo32/rl-opt/rlopt/results/l2'), paired_colors[7]),
+        ('BP', Path('/users/kguo32/rl-opt/rlopt/results/bp'), paired_colors[5]),
+        ('CBP + L2', Path('/users/kguo32/rl-opt/rlopt/results/cbp_l2'), paired_colors[9]),
+        ('Perturb + L2', Path('/users/kguo32/rl-opt/rlopt/results/snp_l2'), paired_colors[11]),
         # ('BP + muon', Path('/users/kguo32/rl-opt/rlopt/results/bp_muon'), 'red')
     ]
 

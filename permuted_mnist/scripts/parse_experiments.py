@@ -15,7 +15,7 @@ from permuted_mnist.utils.file_system import load_info
 
 def parse_exp_dir(study_path, study_hparam_path):
     # Hyperparameters of interest
-    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr']
+    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr', 'perturb_scale']
 
     # Gather all result paths, excluding previous summary
     study_paths = list(Path(study_path).iterdir())

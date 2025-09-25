@@ -51,6 +51,10 @@ class PPO:
         self.clip_eps = clip_eps
         self.act = jax.jit(self.act)
         self.loss = jax.jit(self.loss)
+    
+    def perturb(self, params, perturb_scale, rng):
+        """Add Gaussian noise to parameters"""
+        return perturb_params(params, rng, perturb_scale)
 
     def act(self, rng: chex.PRNGKey,
             train_state: flax.training.train_state.TrainState,
@@ -117,6 +121,40 @@ class PPO:
                 - self.entropy_coeff * entropy
         )
         return total_loss, (value_loss, loss_actor, entropy)
+
+
+def perturb_params(params, rng, scale):
+    """Add N(0, scale) noise to layer parameters (weights and biases) only."""
+    
+    def perturb_layer_params(layer_params, rng):
+        """Perturb weights and biases of a single layer."""
+        rng1, rng2 = jax.random.split(rng)
+        perturbed_kernel = layer_params['kernel'] + scale * jax.random.normal(
+            rng1, layer_params['kernel'].shape, layer_params['kernel'].dtype)
+        perturbed_bias = layer_params['bias'] + scale * jax.random.normal(
+            rng2, layer_params['bias'].shape, layer_params['bias'].dtype)
+        return {'kernel': perturbed_kernel, 'bias': perturbed_bias}
+    
+    actor_layer_keys = [k for k in params['params']['actor'].keys() if k.startswith('a_')]
+    critic_layer_keys = [k for k in params['params']['critic'].keys() if k.startswith('c_')]
+    num_actor_layers = len(actor_layer_keys)
+    num_critic_layers = len(critic_layer_keys)
+    # Perturb actor layers
+    rngs = jax.random.split(rng, num_actor_layers)
+    layer_idx = 0
+    for key, value in params['params']['actor'].items():
+        if key.startswith('a_'):
+            params['params']['actor'][key] = perturb_layer_params(value, rngs[layer_idx])
+            layer_idx += 1
+    # Perturb critic layers
+    rngs = jax.random.split(rng, num_critic_layers)
+    layer_idx = 0
+    for key, value in params['params']['critic'].items():
+        if key.startswith('c_'):
+            params['params']['critic'][key] = perturb_layer_params(value, rngs[layer_idx])
+            layer_idx += 1
+    
+    return params, rngs[-1]
 
 
 def env_step(runner_state, unused, agent: PPO, env, env_params, args):
@@ -370,6 +408,13 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
                                 train_state.params, traj_batch, advantages, targets
                             )
                             train_state = train_state.apply_gradients(grads=grads)
+                            
+                            # Apply perturb if enabled
+                            if args.to_perturb:
+                                rng, _rng = jax.random.split(rng)
+                                new_params, rng = agent.perturb(train_state.params, args.perturb_scale, _rng)
+                                train_state = train_state.replace(params=new_params)
+                            
                             if args.cont_backprop:
                                 rng, _rng = jax.random.split(rng)
                                 train_state = train_state.update_and_reinit(_rng,

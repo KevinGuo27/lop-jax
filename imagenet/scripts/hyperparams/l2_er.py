@@ -2,7 +2,7 @@ from pathlib import Path
 
 exp_name = Path(__file__).stem
 
-lrs = [1e-3]
+lrs = [1e-4]
 er_lrs = [1e-3, 1e-4, 1e-5]
 er_batchs = [12]
 weight_decays = [1e-3, 1e-4, 1e-5]

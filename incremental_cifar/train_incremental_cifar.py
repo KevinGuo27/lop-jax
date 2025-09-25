@@ -87,16 +87,29 @@ class EffectiveRankAgent:
         return perturb_params(params, rng, perturb_scale)
 
 def perturb_params(params, rng, scale):
-    """Add N(0, scale) noise to every parameter tensor in the tree."""
+    """Add N(0, scale) noise to layer parameters (weights and biases) only."""
     
-    leaves, treedef = jax.tree_util.tree_flatten(params)
-    rngs = jax.random.split(rng, len(leaves))
+    def perturb_layer_params(layer_params, rng):
+        """Perturb weights and biases of a single layer."""
+        rng1, rng2 = jax.random.split(rng)
+        perturbed_kernel = layer_params['kernel'] + scale * jax.random.normal(rng1, layer_params['kernel'].shape, layer_params['kernel'].dtype)
+        perturbed_bias = layer_params['bias'] + scale * jax.random.normal(rng2, layer_params['bias'].shape, layer_params['bias'].dtype)
+        return {'kernel': perturbed_kernel, 'bias': perturbed_bias}
     
-    new_leaves = [
-        p + scale * jax.random.normal(r, p.shape, p.dtype)
-        for p, r in zip(leaves, rngs)
-    ]
-    return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
+    # Split RNG for each layer
+    num_layers = len([k for k in params['params'].keys() if k.startswith('layer_')])
+    rngs = jax.random.split(rng, num_layers)
+    
+    layer_idx = 0
+    for key, value in params['params'].items():
+        if key.startswith('layer_'):
+            params['params'][key] = perturb_layer_params(value, rngs[layer_idx])
+            layer_idx += 1
+        else:
+            # Keep non-layer parameters unchanged
+            params['params'][key] = value
+    
+    return params, rngs[-1]
 
 def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
     network = build_resnet18(num_classes=100)
@@ -317,30 +330,40 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             #compute hessian at the start of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
-                # Hessian computation on test set
-                x_hessian, y_hessian = x_eval[:args.compute_hessian_size], y_eval[:args.compute_hessian_size]
+                new_classes = class_order[task * classes_per_task:(task + 1) * classes_per_task]
+                
+                # Filter data to only include newly added classes
+                new_train_mask = jnp.isin(true_train_labels, new_classes)
+                new_test_mask = jnp.isin(true_test_labels, new_classes)
+                
+                x_train_new = jnp.transpose(jnp.compress(new_train_mask, all_x_train, axis=0), axes=(0, 2, 3, 1))
+                y_train_new = all_y_train[new_train_mask, :]
+                x_eval_new = jnp.transpose(jnp.compress(new_test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))
+                y_eval_new = all_y_test[new_test_mask, :]
+                # Hessian computation on test set (newly added classes only)
+                x_hessian, y_hessian = x_eval_new[:args.compute_hessian_size], y_eval_new[:args.compute_hessian_size]
                 hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=32,
+                    order=16,
                     rng_key=rng
                 )
                 # density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
                 density_test, grids_test, effective_rank = tridiag_to_density_and_erank([tridiag], grid_len=10000, sigma_squared=1e-5)
                 jax.debug.print("Effective Rank at init: {er}", er=effective_rank)
 
-                # Hessian computation on train set
-                x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
+                # Hessian computation on train set (newly added classes only)
+                x_hessian, y_hessian = x_train_new[:args.compute_hessian_size], y_train_new[:args.compute_hessian_size]
                 hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=32,
+                    order=16,
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
@@ -365,28 +388,40 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
 
             #compute hessian at the end of the task
             if args.compute_hessian and task % args.compute_hessian_interval == 0:
-                # TODO: Compute the Hessian
-                x_hessian, y_hessian = x_eval[:args.compute_hessian_size], y_eval[:args.compute_hessian_size]
+                # Get newly added classes for current task
+                new_classes = class_order[task * classes_per_task:(task + 1) * classes_per_task]
+                
+                # Filter data to only include newly added classes
+                new_train_mask = jnp.isin(true_train_labels, new_classes)
+                new_test_mask = jnp.isin(true_test_labels, new_classes)
+                
+                x_train_new = jnp.transpose(jnp.compress(new_train_mask, all_x_train, axis=0), axes=(0, 2, 3, 1))
+                y_train_new = all_y_train[new_train_mask, :]
+                x_eval_new = jnp.transpose(jnp.compress(new_test_mask, all_x_test, axis=0), axes=(0, 2, 3, 1))
+                y_eval_new = all_y_test[new_test_mask, :]
+                
+                # Hessian computation on test set (newly added classes only)
+                x_hessian, y_hessian = x_eval_new[:args.compute_hessian_size], y_eval_new[:args.compute_hessian_size]
                 hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=32,
+                    order=16,
                     rng_key=rng
                 )
                 density_test, grids_test = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)
 
-                # Hessian computation on train set
-                x_hessian, y_hessian = x_train[:args.compute_hessian_size], y_train[:args.compute_hessian_size]
+                # Hessian computation on train set (newly added classes only)
+                x_hessian, y_hessian = x_train_new[:args.compute_hessian_size], y_train_new[:args.compute_hessian_size]
                 hvp_fn, unravel, num_params = get_hvp_fn(agent.hessian_loss, train_state.params, (batch_stats, x_hessian, y_hessian, False, active_classes))
                 hvp_cl = lambda v: hvp_fn(train_state.params, v)
                 rng, _rng = jax.random.split(rng)
                 tridiag, lanczos_vecs = lanczos_alg(
                     hvp_cl,
                     num_params,
-                    order=32,
+                    order=16,
                     rng_key=rng
                 )
                 density_train, grids_train = tridiag_to_density([tridiag], grid_len=10000, sigma_squared=1e-5)

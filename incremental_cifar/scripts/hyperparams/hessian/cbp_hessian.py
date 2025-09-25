@@ -15,6 +15,7 @@ hparams = {
             'cont_backprop': True,
             'weight_decay': 0.0,
             'lr': lrs,
+            'num_tasks': 19,
             'compute_hessian': True,
             'compute_hessian_interval': 1,
             'replacement_rate': replacement_rates,

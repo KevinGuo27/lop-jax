@@ -21,7 +21,7 @@ class PermutedMnistHyperparams(Hyperparams):
     num_features: int = 1000  # Number of input features
     change_after: int = 10 * 6000  # Number of steps after which the task changes
     to_perturb: bool = False  # Whether to perturb the input data
-    perturb_scale: int = 1e-5
+    perturb_scale: float = 1e-5
     num_hidden_layers: int = 3
     mini_batch_size: int = 1
     no_anneal_lr: bool = True

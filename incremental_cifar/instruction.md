@@ -107,7 +107,7 @@ Create various analysis plots using the plotting script:
 
 ```bash
 cd /users/kguo32/rl-opt/incremental_cifar/scripts
-python plot_single_metric.py
+python plot_single_metric.py --accuracy_eval
 ```
 
 **Available plot types:**

@@ -34,6 +34,9 @@ class IncrementalCIFARHyperparams(Hyperparams):
 
     # RESET NETWORK
     reset: bool = False  # Do we reset the network after each task?
+    
+    # LIFELONG LEARNING
+    num_experiments_repeat: int = 1  # Number of times to repeat the entire experiment sequence
 
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?

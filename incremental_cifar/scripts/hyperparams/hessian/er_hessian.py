@@ -15,6 +15,7 @@ hparams = {
             'weight_decay': 0.0,
             'lr': lrs,
             'er_lr': er_lrs,
+            'num_tasks': 19,
             'compute_hessian': True,
             'compute_hessian_interval': 1,
             'seed': [2025 + i for i in range(5)],

@@ -60,16 +60,30 @@ class EffectiveRankAgent:
         return perturb_params(params, rng, perturb_scale)
 
 def perturb_params(params, rng, scale):
-    """Add N(0, scale) noise to every parameter tensor in the tree."""
+    """Add N(0, scale) noise to layer parameters (weights and biases) only."""
     
-    leaves, treedef = jax.tree_util.tree_flatten(params)
-    rngs = jax.random.split(rng, len(leaves))
+    def perturb_layer_params(layer_params, rng):
+        """Perturb weights and biases of a single layer."""
+        rng1, rng2 = jax.random.split(rng)
+        perturbed_kernel = layer_params['kernel'] + scale * jax.random.normal(rng1, layer_params['kernel'].shape, layer_params['kernel'].dtype)
+        perturbed_bias = layer_params['bias'] + scale * jax.random.normal(rng2, layer_params['bias'].shape, layer_params['bias'].dtype)
+        return {'kernel': perturbed_kernel, 'bias': perturbed_bias}
     
-    new_leaves = [
-        p + scale * jax.random.normal(r, p.shape, p.dtype)
-        for p, r in zip(leaves, rngs)
-    ]
-    return jax.tree_util.tree_unflatten(treedef, new_leaves), rngs[-1]
+    # Split RNG for each layer
+    num_layers = len([k for k in params['params'].keys() if k.startswith('layer_')])
+    rngs = jax.random.split(rng, num_layers)
+    
+    # Create new params dict with perturbed layer parameters
+    layer_idx = 0
+    for key, value in params['params'].items():
+        if key.startswith('layer_'):
+            params['params'][key] = perturb_layer_params(value, rngs[layer_idx])
+            layer_idx += 1
+        else:
+            # Keep non-layer parameters unchanged
+            params['params'][key] = value
+    
+    return params, rngs[-1]
 
 def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
     network = ConvNet()

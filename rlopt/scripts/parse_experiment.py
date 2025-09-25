@@ -31,7 +31,7 @@ def combine_seeds_and_envs(x: jnp.ndarray):
 
 def parse_exp_dir(study_path, study_hparam_path):
     # TODO: THIS
-    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr']
+    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr', 'perturb_scale']
     study_paths = list(study_path.iterdir())
     # remove the path that ends with best_hyperparam_per_env_res.pkl
     study_paths = [path for path in study_paths if not path.name.endswith('best_hyperparam_per_env_res.pkl')]

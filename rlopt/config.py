@@ -91,3 +91,5 @@ class PolicyEvalHyperparams(Hyperparams):
 class NonStationaryPolicyHyperparams(PolicyHyperparams):
     change_every: int = int(1e6)
     friction_seed: int = 0  # Seed for the friction schedule
+    to_perturb: bool = False  # Whether to perturb parameters
+    perturb_scale: float = 1e-5  # Scale for parameter perturbation
