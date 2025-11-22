@@ -81,11 +81,13 @@ if __name__ == "__main__":
     # Get set2 color palette
     paired_colors = cm.Paired(np.linspace(0, 1, 12))
     study_paths = [
-        ('CBP', Path('/users/kguo32/rl-opt/permuted_mnist/results/cbp'), paired_colors[9]),
-        ('L2 + ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_er'), paired_colors[1]),
-        ('ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/er'), paired_colors[3]),
-        ('BP', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp'), paired_colors[5]),
-        ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2'), paired_colors[7]),
+        ('CBP', Path('/users/kguo32/rl-opt/permuted_mnist/results/cbp_hessian_fix_lr'), paired_colors[9]),
+        ('L2 + ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_er_hessian_fix_lr'), paired_colors[1]),
+        ('ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/er_hessian_fix_lr'), paired_colors[3]),
+        ('BP', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp_hessian_fix_lr'), paired_colors[5]),
+        ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_hessian_fix_lr'), paired_colors[7]),
+        ('LayerNorm', Path('/users/kguo32/rl-opt/permuted_mnist/results/laynorm_l2'), paired_colors[11]),
+        ('Spectral Reg', Path('/users/kguo32/rl-opt/permuted_mnist/results/spectral_reg'), paired_colors[8]),
         # ('SNP + L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/snp_l2'), paired_colors[11]),
     ]
 

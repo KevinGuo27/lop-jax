@@ -56,6 +56,7 @@ class DeepFFNN(nn.Module):
     num_outputs: int = 1
     num_hidden_layers: int = 3
     act_type: str = 'relu'
+    use_layernorm: bool = False
 
     @nn.compact
     def __call__(self, x):
@@ -67,6 +68,8 @@ class DeepFFNN(nn.Module):
             bias_init=nn.initializers.zeros,
             name="layer_0",
         )(x)
+        if self.use_layernorm:
+            out = nn.LayerNorm(name="ln_0")(out)  # normalize over last dim
         out = act(out)
         activations = {'layer_0': None,
                        'layer_1': out}
@@ -78,6 +81,8 @@ class DeepFFNN(nn.Module):
                 bias_init=nn.initializers.zeros,
                 name=f"layer_{i}",
             )(out)
+            if self.use_layernorm:
+                out = nn.LayerNorm(name=f"ln_{i}")(out)
             out = act(out)
             activations[f'layer_{i+1}'] = out
 
@@ -91,8 +96,14 @@ class DeepFFNN(nn.Module):
         return out, activations
 
 class EffectiveRankAgent:
-    def __init__(self, network: DeepFFNN):
+    def __init__(self, network: DeepFFNN, use_spectral_reg=False, spectral_k=2, 
+                 spectral_target=2.0, spectral_reg_strength=0.1, spectral_power_iter=10):
         self.network = network
+        self.use_spectral_reg = use_spectral_reg
+        self.spectral_k = spectral_k
+        self.spectral_target = spectral_target
+        self.spectral_reg_strength = spectral_reg_strength
+        self.spectral_power_iter = spectral_power_iter
         self.loss = jax.jit(self.loss)
         self.effective_rank_loss = jax.jit(self.effective_rank_loss)
     
@@ -117,6 +128,17 @@ class EffectiveRankAgent:
     def loss(self, params, x, y):
         output, features = self.network.apply(params, x)
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
+        
+        if self.use_spectral_reg:
+            spectral_reg = compute_spectral_regularization(
+                params, 
+                k=self.spectral_k,
+                target=self.spectral_target,
+                reg_strength=self.spectral_reg_strength,
+                num_iter=self.spectral_power_iter
+            )
+            loss = loss + spectral_reg
+        
         return loss
     
     def perturb(self, params, perturb_scale, rng):
@@ -148,12 +170,57 @@ def perturb_params(params, rng, scale):
     
     return params, rngs[-1]
 
+def power_iteration(w, num_iter=10, rng_key=None):
+    """Compute largest singular value using power iteration."""
+    eps = 1e-6
+    if rng_key is None:
+        rng_key = jax.random.PRNGKey(0)
+    
+    v = jax.random.normal(rng_key, (w.shape[1], ))
+    
+    for j in range(num_iter):
+        wv = jnp.matmul(w, v)
+        v = jnp.matmul(w.T, wv)
+        v = v / (jnp.linalg.norm(v) + eps)
+    
+    Av = jnp.matmul(w, v)
+    s = jnp.linalg.norm(Av)
+    u = Av / (s + eps)
+    
+    return s, u, v
+
+def compute_spectral_regularization(params, k=2, target=2.0, reg_strength=0.1, num_iter=10):
+    """Compute spectral regularization on network parameters."""
+    reg = 0.0
+    param_idx = 0
+    
+    for path, leaf in jax.tree_util.tree_leaves_with_path(params):
+        # Extract the parameter name from the path
+        if len(path) >= 2:
+            layer_name = path[-2].key if hasattr(path[-2], 'key') else str(path[-2])
+            param_type = path[-1].key if hasattr(path[-1], 'key') else str(path[-1])
+            
+            if param_type == 'kernel':
+                # Use deterministic key based on parameter index to avoid randomness in gradients
+                rng_key = jax.random.PRNGKey(param_idx)
+                largest_sv, _, _ = power_iteration(leaf, num_iter=num_iter, rng_key=rng_key)
+                spectral_reg = (largest_sv**k - target)**2
+                reg += reg_strength * spectral_reg
+                param_idx += 1
+            elif param_type == 'bias':
+                reg += reg_strength * jnp.sum((leaf - 0.0)**2)
+            elif param_type == 'scale':
+                reg += reg_strength * jnp.sum((leaf - 1.0)**2)
+    
+    return reg
+
 def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
     network = DeepFFNN(
         num_features=args.num_features,
         num_outputs=10,  # MNIST has 10 classes
         num_hidden_layers=args.num_hidden_layers,
-        act_type=args.activation
+        act_type=args.activation,
+        use_layernorm=args.use_layernorm
     )
     num_tasks = args.num_tasks
     images_per_class = 6000
@@ -168,7 +235,14 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         )
         return args.lr * frac
     def train(lr, er_lr, rng):
-        agent = EffectiveRankAgent(network)
+        agent = EffectiveRankAgent(
+            network,
+            use_spectral_reg=args.use_spectral_reg,
+            spectral_k=args.spectral_k,
+            spectral_target=args.spectral_target,
+            spectral_reg_strength=args.spectral_reg_strength,
+            spectral_power_iter=args.spectral_power_iter
+        )
         
         # load data
         data_path = Path('/users/kguo32/rl-opt/permuted_mnist/data/mnist_')

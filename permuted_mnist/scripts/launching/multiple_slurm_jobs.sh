@@ -12,7 +12,7 @@
 source ../../../lop/bin/activate
 
 # Specify the filename
-input_file="../runs/runs_snp_l2.txt"
+input_file="../runs/runs_spectral_reg_hessian_fix_lr.txt"
 job_name=$(basename "$input_file" .txt) # Extract the base name of the file without extension
 
 # Read commands from the file and submit each as a separate job

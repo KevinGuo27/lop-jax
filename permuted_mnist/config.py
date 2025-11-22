@@ -12,7 +12,7 @@ class Hyperparams(Tap):
 
 class PermutedMnistHyperparams(Hyperparams):
     env: str = 'permuted_mnist'
-    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2_er'
+    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er', 'spectral_reg', 'laynorm_l2'] = 'l2_er'
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
     lr: list[float] = [0.01]
@@ -23,6 +23,7 @@ class PermutedMnistHyperparams(Hyperparams):
     to_perturb: bool = False  # Whether to perturb the input data
     perturb_scale: float = 1e-5
     num_hidden_layers: int = 3
+    use_layernorm: bool = False
     mini_batch_size: int = 1
     no_anneal_lr: bool = True
     max_grad_norm: float = 0.5
@@ -32,6 +33,13 @@ class PermutedMnistHyperparams(Hyperparams):
     er_lr: list[float] = [0.01]
     er_batch: int = 100
     er_step: int = 1
+
+    # Spectral Regularization
+    use_spectral_reg: bool = False
+    spectral_reg_strength: float = 0.1
+    spectral_k: int = 2
+    spectral_target: float = 2.0
+    spectral_power_iter: int = 10
 
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?
