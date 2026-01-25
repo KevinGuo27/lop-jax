@@ -22,6 +22,7 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 from flax import struct
+from flax.core import unfreeze, freeze
 from pathlib import Path
 import chex
 from permuted_mnist.config import PermutedMnistHyperparams
@@ -69,6 +70,78 @@ def compute_param_change_norms(old_params, new_params):
     return compute_param_norms(param_diff)
 
 
+def apply_rank1_alpha_init(variables, init_rng, alpha, eps=1e-8):
+    """Overwrite fc1_copy_kernel and frozen fc1_kernel with a correlated rank-1 mixture."""
+    v = unfreeze(variables)
+
+    W = v['params']['fc1_copy_kernel']  # [d, p]
+    d, p = W.shape
+
+    # Shared direction u (same across columns), LeCun-scale
+    u_rng = jax.random.fold_in(init_rng, 12345)
+    u = jax.random.normal(u_rng, (d, 1), dtype=W.dtype) / jnp.sqrt(d)  # [d,1]
+    U = u * jnp.ones((1, p), dtype=W.dtype)  # [d,p]
+
+    # Mix and rescale to keep variance ~ constant across alpha
+    denom = jnp.sqrt((1.0 - alpha) ** 2 + alpha ** 2 + eps)
+    W_new = ((1.0 - alpha) * W + alpha * U) / denom
+
+    v['params']['fc1_copy_kernel'] = W_new
+    v['frozen']['fc1_kernel'] = W_new  # gates come from frozen preact
+
+    return freeze(v)
+
+
+def apply_lowrank_init_factorized(variables, init_rng, rank: int, eps=1e-8):
+    """
+    Overwrite fc1_copy_kernel and frozen fc1_kernel with an exact rank-'rank' matrix.
+
+    W_new = (U @ A) * scale
+    where U ~ N(0, 1/d), A ~ N(0, 1/r)
+
+    scale is chosen so Var[W_new_ij] ~ 1/d (LeCun-like).
+    """
+    v = unfreeze(variables)
+
+    W_ref = v['params']['fc1_copy_kernel']  # [d, p] (exists from standard init)
+    d, p = W_ref.shape
+    r_max = min(d, p)
+    r = jnp.clip(jnp.asarray(rank), 1, r_max)
+
+    k1, k2 = jax.random.split(init_rng, 2)
+
+    # U: [d, r_max], A: [r_max, p] with mask to enforce rank r
+    U_full = jax.random.normal(k1, (d, r_max), dtype=W_ref.dtype) / jnp.sqrt(d)
+    A_full = jax.random.normal(k2, (r_max, p), dtype=W_ref.dtype) / jnp.sqrt(r)
+    mask = (jnp.arange(r_max) < r).astype(W_ref.dtype)
+    U = U_full * mask[None, :]
+    A = A_full * mask[:, None]
+
+    W_new = U @ A  # [d, p]
+
+    # Normalize to match LeCun-like per-entry variance 1/d
+    cur_std = jnp.std(W_new)
+    target_std = 1.0 / jnp.sqrt(d)
+    W_new = W_new * (target_std / (cur_std + eps))
+
+    v['params']['fc1_copy_kernel'] = W_new
+    v['frozen']['fc1_kernel'] = W_new
+
+    return freeze(v)
+
+
+def logdet_batch_gram_penalty(H, delta=1e-3, eps=1e-8):
+    """Negative log-determinant of batch Gram (maximize logdet by minimizing)."""
+    # H: [B, p] -> K: [B, B], well-posed when B << p
+    B, p = H.shape
+    Hc = H - jnp.mean(H, axis=0, keepdims=True)
+    K = (Hc @ Hc.T) / (p + eps)
+    K = K + delta * jnp.eye(B, dtype=H.dtype)
+    L = jnp.linalg.cholesky(K)
+    logdet = 2.0 * jnp.sum(jnp.log(jnp.diag(L) + eps))
+    return -logdet
+
+
 class LinearizedFFNN(nn.Module):
     """
     Single-hidden-layer linearized ReLU network matching Torch Actor structure.
@@ -102,6 +175,9 @@ class LinearizedFFNN(nn.Module):
             # (in_features, self.num_features)
             nn.initializers.lecun_normal(),
             (in_features, self.num_features)
+            # nn.initializers.orthogonal(),   # or orthogonal(scale=...)
+            # (in_features, self.num_features)
+            
         )
         if self.use_bias:
             bias_copy = self.param('fc1_copy_bias', nn.initializers.zeros, (self.num_features,))
@@ -183,7 +259,8 @@ class LinearizedAgent:
     def __init__(self, network: LinearizedFFNN):
         self.network = network
         self.loss = jax.jit(self._loss)
-        self.effective_rank_loss = jax.jit(self._effective_rank_loss)
+        self.logdet_loss = jax.jit(self._logdet_loss)
+        self.total_loss = jax.jit(self._loss_total)
 
     def predict(self, params, frozen_params, x):
         """Forward pass with trainable and frozen params."""
@@ -202,17 +279,29 @@ class LinearizedAgent:
         )
         return ce
 
-    def _effective_rank_loss(self, params, frozen_params, x, er_eps=1e-8):
-        """Effective rank loss computed on features (negative entropy of singular values)."""
+    def _logdet_loss(self, params, frozen_params, x, logdet_eps=1e-8):
+        """Log-det covariance penalty computed on features."""
         _, feats = self.network.apply(
             {'params': params, 'frozen': frozen_params}, x
         )
         H = feats['layer_1']  # shape [B, num_features]
-        s = jnp.linalg.svdvals(H)  # [min(B, num_features)]
-        s = jnp.abs(s)
-        p = s / (jnp.sum(s) + er_eps)
-        neg_entropy = jnp.sum(p * jnp.log(p + er_eps))  # <= 0, minimizing this maximizes effective rank
-        return neg_entropy
+        return logdet_batch_gram_penalty(H, eps=logdet_eps)
+
+    def _loss_total(self, params, frozen_params, x, y, beta=0.0, logdet_eps=1e-8):
+        """Cross-entropy loss with optional log-det batch Gram penalty."""
+        logits, feats = self.network.apply(
+            {'params': params, 'frozen': frozen_params}, x
+        )
+        ce = jnp.mean(
+            optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=y)
+        )
+
+        def with_logdet(_):
+            H = feats['layer_1']  # shape [B, num_features]
+            reg = logdet_batch_gram_penalty(H, eps=logdet_eps)
+            return ce + beta * reg
+
+        return jax.lax.cond(beta == 0.0, lambda _: ce, with_logdet, operand=None)
 
     def effective_rank(self, features, eps=1e-8):
         """Compute effective rank of feature matrix."""
@@ -239,7 +328,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
     input_size = 784
     examples_per_task = images_per_class * classes_per_task
 
-    def train(lr, er_lr, rng):
+    def train(lr, logdet_beta, rank1_alpha, lowrank_rank, rng):
         agent = LinearizedAgent(network)
 
         # Load data
@@ -252,6 +341,24 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
         # Initialize network
         rng, init_rng = jax.random.split(rng)
         variables = network.init({'params': init_rng}, x_all[:1])
+        variables = freeze(unfreeze(variables))
+        rank1_enabled = rank1_alpha != 0.0
+        lowrank_enabled = lowrank_rank > 0
+
+        def apply_lowrank(vars_):
+            return apply_lowrank_init_factorized(vars_, init_rng, lowrank_rank)
+
+        variables = jax.lax.cond(
+            rank1_enabled,
+            lambda v: apply_rank1_alpha_init(v, init_rng, rank1_alpha),
+            lambda v: jax.lax.cond(
+                lowrank_enabled,
+                apply_lowrank,
+                lambda x: freeze(unfreeze(x)),
+                v
+            ),
+            variables
+        )
 
         # Extract params (trainable fc1_copy) and frozen (fc1, fc_out)
         params = variables['params']
@@ -282,95 +389,66 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             frozen_params=frozen_params,
         )
 
+        # Print logits std on a batch before training starts
+        logits_init, _ = agent.predict(params, frozen_params, x_all[:args.mini_batch_size])
+        logit_std = jnp.std(logits_init)
+        jax.debug.print("Initial logits std (first batch): {s}", s=logit_std)
+
         def update_task(runner_state, task):
             def update_batch(runner_state, batch_idx):
-                def update_step(runner_state, mini_batch_idx):
-                    x, y, train_state, rng = runner_state
-                    minibatch_x = jax.lax.dynamic_slice_in_dim(
-                        x, mini_batch_idx, args.mini_batch_size, axis=0
-                    )
-                    minibatch_y = jax.lax.dynamic_slice_in_dim(
-                        y, mini_batch_idx, args.mini_batch_size, axis=0
-                    )
-
-                    # Compute loss
-                    loss = agent.loss(
-                        train_state.params, train_state.frozen_params,
-                        minibatch_x, minibatch_y
-                    )
-
-                    # Compute accuracy
-                    logits, _ = agent.predict(
-                        train_state.params, train_state.frozen_params, minibatch_x
-                    )
-                    pred_labels = jnp.argmax(logits, axis=-1)
-                    accuracy = jnp.mean(pred_labels == minibatch_y)
-
-                    # Gradients only w.r.t. trainable params (fc1_copy)
-                    grads = jax.grad(
-                        lambda p: agent._loss(p, train_state.frozen_params, minibatch_x, minibatch_y)
-                    )(train_state.params)
-                    train_state = train_state.apply_gradients(grads=grads)
-
-                    # Stale ER update: reuse er_grads computed on full er_batch window.
-                    # Apply every minibatch step; er_step scales the update magnitude.
-                    if er_grads is not None:
-                        scale = -er_lr * args.er_step
-                        updates = jax.tree_util.tree_map(lambda g: scale * g, er_grads)
-                        new_params = optax.apply_updates(train_state.params, updates)
-                        train_state = train_state.replace(params=new_params)
-
-                    return (x, y, train_state, rng), (loss, accuracy, er_loss)
-
                 x, y, train_state, rng = runner_state
-                batch_x = jax.lax.dynamic_slice_in_dim(
-                    x, batch_idx, args.mini_batch_size * args.er_batch, axis=0
+                minibatch_x = jax.lax.dynamic_slice_in_dim(
+                    x, batch_idx, args.mini_batch_size, axis=0
                 )
-                batch_y = jax.lax.dynamic_slice_in_dim(
-                    y, batch_idx, args.mini_batch_size * args.er_batch, axis=0
+                minibatch_y = jax.lax.dynamic_slice_in_dim(
+                    y, batch_idx, args.mini_batch_size, axis=0
                 )
-                # Compute ER gradients once per er_batch window (stale for minibatches in this window).
-                er_enabled = jnp.logical_and(er_lr != 0.0, args.er_step > 0)
 
-                def compute_er(_):
-                    er_loss = agent._effective_rank_loss(
-                        train_state.params, train_state.frozen_params, batch_x
+                # Compute total loss (CE + beta * logdet)
+                loss = agent.total_loss(
+                    train_state.params, train_state.frozen_params,
+                    minibatch_x, minibatch_y, beta=logdet_beta
+                )
+
+                # Compute accuracy
+                logits, _ = agent.predict(
+                    train_state.params, train_state.frozen_params, minibatch_x
+                )
+                pred_labels = jnp.argmax(logits, axis=-1)
+                accuracy = jnp.mean(pred_labels == minibatch_y)
+
+                # Gradients only w.r.t. trainable params (fc1_copy)
+                grads = jax.grad(
+                    lambda p: agent._loss_total(
+                        p, train_state.frozen_params, minibatch_x, minibatch_y, beta=logdet_beta
                     )
-                    er_grads = jax.grad(
-                        lambda p: agent._effective_rank_loss(p, train_state.frozen_params, batch_x)
-                    )(train_state.params)
-                    return er_loss, er_grads
+                )(train_state.params)
+                train_state = train_state.apply_gradients(grads=grads)
 
-                def no_er(_):
-                    er_loss = jnp.array(0.0, dtype=batch_x.dtype)
-                    er_grads = jax.tree_util.tree_map(jnp.zeros_like, train_state.params)
-                    return er_loss, er_grads
-
-                er_loss, er_grads = jax.lax.cond(er_enabled, compute_er, no_er, operand=None)
-                step_runner_state = (batch_x, batch_y, train_state, rng)
-                step_runner_state, (loss, accuracy, er_loss) = jax.lax.scan(
-                    update_step,
-                    step_runner_state,
-                    jnp.arange(0, args.er_batch * args.mini_batch_size, args.mini_batch_size),
-                    args.er_batch
+                # For logging only
+                logdet_enabled = logdet_beta != 0.0
+                logdet_loss = jax.lax.cond(
+                    logdet_enabled,
+                    lambda _: agent._logdet_loss(train_state.params, train_state.frozen_params, minibatch_x),
+                    lambda _: jnp.array(0.0, dtype=minibatch_x.dtype),
+                    operand=None
                 )
-                train_state = step_runner_state[2]
 
                 runner_state = (x, y, train_state, rng)
-                return runner_state, (loss, accuracy, er_loss)
+                return runner_state, (loss, accuracy, logdet_loss)
 
             x, y, train_state, train_previous, rng, x_eval_set, y_eval_set = runner_state
             old_params = train_state.params
 
             batch_runner_state = (x, y, train_state, rng)
-            batch_runner_state, (loss, accuracy, er_loss) = jax.lax.scan(
+            batch_runner_state, (loss, accuracy, logdet_loss) = jax.lax.scan(
                 update_batch,
                 batch_runner_state,
-                jnp.arange(0, examples_per_task, args.mini_batch_size * args.er_batch),
-                examples_per_task // (args.mini_batch_size * args.er_batch)
+                jnp.arange(0, examples_per_task, args.mini_batch_size),
+                examples_per_task // args.mini_batch_size
             )
             accuracy = jnp.mean(accuracy)
-            er_loss = jnp.mean(er_loss)
+            logdet_loss = jnp.mean(logdet_loss)
             train_state = batch_runner_state[2]
             runner_state = (x_all, y_all, train_state, rng, x_eval_set, y_eval_set)
 
@@ -407,8 +485,8 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     r=rank, er=effective_rank, ar=approx_rank, dn=dead_neurons
                 )
                 jax.debug.print(
-                    "ER loss: {er_loss}",
-                    er_loss=er_loss
+                    "Logdet loss: {logdet_loss}",
+                    logdet_loss=logdet_loss
                 )
 
             res_info = {
@@ -420,7 +498,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                 'dead_neurons': dead_neurons,
                 'accuracy_eval': accuracy_eval,
                 'accuracy_pre': accuracy_pre,
-                'er_loss': er_loss,
+                'logdet_loss': logdet_loss,
                 'l1_norm_change': l1_norm_change,
                 'l2_norm_change': l2_norm_change,
                 'linf_norm_change': linf_norm_change,
@@ -484,7 +562,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
             # Log to wandb
             if args.wandb:
                 def log_to_wandb(loss, accuracy, rank, eff_rank, approx_rank, dead_neurons,
-                               acc_eval, acc_pre, er_loss, l1_change, l2_change, linf_change, task_num):
+                               acc_eval, acc_pre, logdet_loss, l1_change, l2_change, linf_change, task_num):
                     wandb_info = {
                         'loss': float(loss),
                         'accuracy': float(accuracy),
@@ -494,7 +572,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                         'dead_neurons': float(jnp.mean(dead_neurons)),
                         'accuracy_eval': float(acc_eval),
                         'accuracy_pre': float(acc_pre),
-                        'er_loss': float(er_loss),
+                        'logdet_loss': float(logdet_loss),
                         'l1_norm_change': float(l1_change),
                         'l2_norm_change': float(l2_change),
                         'linf_norm_change': float(linf_change),
@@ -507,7 +585,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
                     jnp.mean(res_info['loss']), res_info['accuracy'],
                     res_info['rank'], res_info['effective_rank'],
                     res_info['approx_rank'], res_info['dead_neurons'],
-                    res_info['accuracy_eval'], res_info['accuracy_pre'], res_info['er_loss'],
+                    res_info['accuracy_eval'], res_info['accuracy_pre'], res_info['logdet_loss'],
                     res_info['l1_norm_change'], res_info['l2_norm_change'],
                     res_info['linf_norm_change'], task
                 )
@@ -538,6 +616,18 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
 if __name__ == "__main__":
     args = PermutedMnistHyperparams().parse_args()
     print(args)
+    # Backward-compatible aliases for renamed CLI args.
+    if not hasattr(args, 'logdet_beta'):
+        if hasattr(args, 'logdet_lr'):
+            args.logdet_beta = args.logdet_lr
+        else:
+            args.logdet_beta = args.er_lr
+    if not hasattr(args, 'logdet_batch'):
+        args.logdet_batch = args.er_batch
+    if not hasattr(args, 'logdet_step'):
+        args.logdet_step = args.er_step
+    if np.any(np.asarray(args.rank1_alpha) != 0) and np.any(np.asarray(args.lowrank_rank) != 0):
+        raise ValueError("Only one of rank1_alpha or lowrank_rank can be enabled at a time.")
     jax.config.update('jax_platform_name', args.platform)
 
     rng = jax.random.PRNGKey(args.seed)
