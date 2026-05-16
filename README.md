@@ -42,13 +42,15 @@ Across tasks on Continual ImageNet, training accuracy is positively correlated w
 
 ## Installation
 
+Requires Python >= 3.11 and [uv](https://docs.astral.sh/uv/).
+
 ```bash
 git clone https://github.com/<user>/lop-jax.git
 cd lop-jax
-pip install -e .
+uv sync
 ```
 
-Dependencies are in `requirements.txt`. Requires JAX with CUDA 12, PyTorch (data loading), Flax, Optax, and Brax (RL).
+This creates a `.venv`, resolves all dependencies (JAX with CUDA 12, PyTorch, Flax, Optax, Brax, etc.), and installs the project in editable mode. Use `uv run` to execute commands in the virtual environment:
 
 ## Usage
 
@@ -56,29 +58,41 @@ Dependencies are in `requirements.txt`. Requires JAX with CUDA 12, PyTorch (data
 
 ```bash
 # Permuted MNIST
-python -m permuted_mnist.train_permuted_mnist --agent l2_er --lr 0.01 --weight_decay 0.001 --seed 2025
+uv run python -m permuted_mnist.train_permuted_mnist --agent l2_er --lr 0.01 --weight_decay 0.001 --seed 2025
 
 # Continual ImageNet
-python -m imagenet.train_imagenet --agent l2_er --lr 0.01 --weight_decay 0.001 --seed 2025
+uv run python -m imagenet.train_imagenet --agent l2_er --lr 0.01 --weight_decay 0.001 --seed 2025
 
 # Incremental CIFAR
-python -m incremental_cifar.train_incremental_cifar --agent l2_er --lr 0.1 --weight_decay 0.0005 --seed 2025
+uv run python -m incremental_cifar.train_incremental_cifar --agent l2_er --lr 0.1 --weight_decay 0.0005 --seed 2025
 
 # Slippery Ant (RL)
-python -m rlopt.ppo_nonstationary --agent l2_er --lr 0.00025 --seed 2025
+uv run python -m rlopt.ppo_nonstationary --agent l2_er --lr 0.00025 --seed 2025
 ```
 
 ### Hessian Computation
 
 Add `--compute_hessian --compute_hessian_interval 100` to any training command. Eigenspectra are saved to `hessian/data/` and plots to `hessian/plots/`.
 
-### SLURM Sweep Pipeline
+### Hyperparameter Sweeps
 
-1. Define hyperparameters in `<benchmark>/scripts/hyperparams/<agent>.py`
-2. `python write_jobs.py` to generate run files
-3. `sbatch multiple_slurm_jobs.sh` to submit
-4. `python parse_experiments.py ../results` to aggregate
-5. `python plot_single_metric.py` to plot
+**1. Generate jobs** from a hyperparameter config:
+```bash
+cd <benchmark>/scripts
+uv run python write_jobs.py hyperparams/<agent>.py
+```
+This writes one command per hyperparameter combination to `scripts/runs/`.
+
+**2. Parse results** after training completes:
+```bash
+uv run python parse_experiments.py ../results
+```
+This aggregates across seeds and hyperparameters, producing `best_hyperparam_per_env_res.pkl`.
+
+**3. Plot:**
+```bash
+uv run python plot_single_metric.py
+```
 
 ## Repository Structure
 
