@@ -56,12 +56,28 @@ uv sync
 
 This creates a `.venv`, resolves all dependencies (JAX with CUDA 12, PyTorch, Flax, Optax, Brax, etc.), and installs the project in editable mode. Use `uv run` to execute commands in the virtual environment:
 
+## Datasets
+
+Download and preprocess data before training. MNIST and CIFAR-100 are downloaded automatically by the scripts; Continual ImageNet requires the preprocessed data from the [Loss of Plasticity](https://github.com/shibhansh/loss-of-plasticity) repo (Dohare et al., 2024).
+
+```bash
+# Permuted MNIST
+cd permuted_mnist && uv run python load_mnist.py
+
+# Incremental CIFAR-100
+cd incremental_cifar && uv run python load_cifar.py
+
+# Continual ImageNet — download preprocessed .npy class files from
+# https://github.com/shibhansh/loss-of-plasticity
+# then update the data path in imagenet/train_imagenet.py (load_imagenet)
+```
+
 ## Usage
 
 ### Training
 
 ```bash
-uv run python -m imagenet.train_imagenet --agent bp --weight_decay 0.0 --lr 0.0001 --seed 2054 --num_tasks 2000 --n_seeds 1 --platform gpu --study_name bp_hessian
+uv run python -m imagenet.train_imagenet --agent bp --weight_decay 0.0 --lr 0.0001 --seed 2054 --num_tasks 2000 --n_seeds 1 --platform gpu --study_name bp_hessian --debug
 ```
 
 ### Hessian Computation

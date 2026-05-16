@@ -8,9 +8,6 @@
 #SBATCH -o kevin-%j.out # Specify an output file
 #SBATCH -e kevin-%j.err # Specify an error file
 
-# Activate the virtual environment
-source ~/pobax_baseline/bin/activate
-
 # Specify the filename
 input_file="../runs/runs_spectral_reg.txt"
 job_name=$(basename "$input_file" .txt) # Extract the base name of the file without extension
@@ -29,8 +26,7 @@ while IFS= read -r command; do
 #SBATCH -o ${job_name}_%j.out
 #SBATCH -e ${job_name}_%j.err
 
-# Activate the virtual environment
-source ~/pobax_baseline/bin/activate
+cd /users/kguo32/rl-opt
 
 # Run the command
 $command

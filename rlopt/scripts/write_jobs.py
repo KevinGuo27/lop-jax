@@ -59,7 +59,7 @@ def generate_runs(run_dicts: List[dict],
                 if exclude:
                     continue
 
-            run_string = f"python {main_fname}"
+            run_string = f"uv run python {main_fname}"
 
             for k, v in arg.items():
 
