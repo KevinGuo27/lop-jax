@@ -83,13 +83,13 @@ def _tree_sum(tree_left, tree_right):
   """Computes tree_left + tree_right."""
   def f(x, y):
     return x + y
-  return jax.tree_map(f, tree_left, tree_right)
+  return jax.tree_util.tree_map(f, tree_left, tree_right)
 
 
 def _tree_zeros_like(tree):
   def f(x):
     return jnp.zeros_like(x)
-  return jax.tree_map(f, tree)
+  return jax.tree_util.tree_map(f, tree)
 
 
 def get_hvp_fn(loss, params, batches, batch_size=100):

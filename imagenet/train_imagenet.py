@@ -27,8 +27,14 @@ from imagenet.utils.density import tridiag_to_density, tridiag_to_density_and_er
 from imagenet.cbp import ContinualBackpropTrainState
 
 class EffectiveRankAgent:
-    def __init__(self, network: ConvNet):
+    def __init__(self, network: ConvNet, use_spectral_reg=False, spectral_k=2, 
+                 spectral_target=2.0, spectral_reg_strength=0.1, spectral_power_iter=10):
         self.network = network
+        self.use_spectral_reg = use_spectral_reg
+        self.spectral_k = spectral_k
+        self.spectral_target = spectral_target
+        self.spectral_reg_strength = spectral_reg_strength
+        self.spectral_power_iter = spectral_power_iter
         self.loss = jax.jit(self.loss)
         self.effective_rank_loss = jax.jit(self.effective_rank_loss)
     
@@ -54,6 +60,18 @@ class EffectiveRankAgent:
     def loss(self, params, x, y):
         output, features = self.network.apply(params, x)
         loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
+        
+        if self.use_spectral_reg:
+            print(f"Using Spectral Regularization: {self.use_spectral_reg}")
+            spectral_reg = compute_spectral_regularization(
+                params, 
+                k=self.spectral_k,
+                target=self.spectral_target,
+                reg_strength=self.spectral_reg_strength,
+                num_iter=self.spectral_power_iter
+            )
+            loss = loss + spectral_reg
+        
         return loss
     
     def perturb(self, params, perturb_scale, rng):
@@ -85,8 +103,66 @@ def perturb_params(params, rng, scale):
     
     return params, rngs[-1]
 
+def power_iteration(w, num_iter=10, rng_key=None):
+    """Compute largest singular value using power iteration.
+    
+    Handles both 2D (Dense) and 4D (Conv) kernels.
+    For Conv kernels, reshapes (h, w, in_ch, out_ch) -> (h*w*in_ch, out_ch).
+    """
+    eps = 1e-6
+    if rng_key is None:
+        rng_key = jax.random.PRNGKey(0)
+    
+    # Reshape Conv kernels (4D) to 2D matrices
+    if len(w.shape) == 4:
+        # Conv kernel: (kernel_h, kernel_w, in_channels, out_channels)
+        # Reshape to: (kernel_h * kernel_w * in_channels, out_channels)
+        w = w.reshape(-1, w.shape[-1])
+    elif len(w.shape) != 2:
+        # Skip non-2D/4D tensors (shouldn't happen for kernels, but be safe)
+        return jnp.array(0.0), None, None
+    
+    v = jax.random.normal(rng_key, (w.shape[1], ))
+    
+    for j in range(num_iter):
+        wv = jnp.matmul(w, v)
+        v = jnp.matmul(w.T, wv)
+        v = v / (jnp.linalg.norm(v) + eps)
+    
+    Av = jnp.matmul(w, v)
+    s = jnp.linalg.norm(Av)
+    u = Av / (s + eps)
+    
+    return s, u, v
+
+def compute_spectral_regularization(params, k=2, target=2.0, reg_strength=0.1, num_iter=10):
+    """Compute spectral regularization on network parameters."""
+    reg = 0.0
+    param_idx = 0
+    
+    for path, leaf in jax.tree_util.tree_leaves_with_path(params):
+        # Extract the parameter name from the path
+        if len(path) >= 2:
+            layer_name = path[-2].key if hasattr(path[-2], 'key') else str(path[-2])
+            param_type = path[-1].key if hasattr(path[-1], 'key') else str(path[-1])
+            
+            if param_type == 'kernel':
+                # Use deterministic key based on parameter index to avoid randomness in gradients
+                rng_key = jax.random.PRNGKey(param_idx)
+                largest_sv, _, _ = power_iteration(leaf, num_iter=num_iter, rng_key=rng_key)
+                spectral_reg = (largest_sv**k - target)**2
+                reg += reg_strength * spectral_reg
+                param_idx += 1
+            elif param_type == 'bias':
+                reg += reg_strength * jnp.sum((leaf - 0.0)**2)
+            elif param_type == 'scale':
+                reg += reg_strength * jnp.sum((leaf - 1.0)**2)
+    
+    return reg
+
 def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
-    network = ConvNet()
+    network = ConvNet(use_layernorm=args.use_layernorm)
+    print(f"Using LayerNorm: {args.use_layernorm}")
     num_tasks = args.num_tasks
     train_images_per_class = 600
     test_images_per_class = 100
@@ -99,7 +175,7 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
         x_train, y_train, x_test, y_test = [], [], [], []
         for idx, _class in enumerate(classes):
             print(f"Loading class {idx} of {len(classes)}")
-            data_file = '/users/kguo32/scratch/data/classes/' + str(_class) + '.npy'
+            data_file = '/users/kguo32/data/kguo32/lop/imagenet/data/classes/' + str(_class) + '.npy'
             new_x = np.load(data_file)
             x_train.append(new_x[:train_images_per_class])
             x_test.append(new_x[train_images_per_class:])
@@ -126,7 +202,14 @@ def make_train(args: ImagenetHyperparams, rng: chex.PRNGKey):
         class_order = class_order[int(class_idx)]
 
     def train(lr, er_lr, rng):
-        agent = EffectiveRankAgent(network)
+        agent = EffectiveRankAgent(
+            network,
+            use_spectral_reg=args.use_spectral_reg,
+            spectral_k=args.spectral_k,
+            spectral_target=args.spectral_target,
+            spectral_reg_strength=args.spectral_reg_strength,
+            spectral_power_iter=args.spectral_power_iter
+        )
         dummy_input = jnp.ones([1, 32, 32, 3])
         network_params = network.init(rng, dummy_input)
         if args.no_anneal_lr:

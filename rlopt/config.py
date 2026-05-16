@@ -23,6 +23,7 @@ class PolicyHyperparams(Tap):
     update_epochs: int = 10
     num_minibatches: int = 16
     activation: Literal['relu', 'tanh'] = 'relu'
+    use_layernorm: bool = False
     optimizer: Literal['adam', 'sgd', 'muon'] = 'adam'
 
     lr: list[float] = [2.5e-4]
@@ -43,6 +44,13 @@ class PolicyHyperparams(Tap):
     er_lr: list[float] = [0.01]
     er_batch: int = 1
     er_step: int = 1
+
+    # Spectral Regularization
+    use_spectral_reg: bool = False
+    spectral_reg_strength: float = 0.1
+    spectral_k: int = 2
+    spectral_target: float = 2.0
+    spectral_power_iter: int = 10
 
     # compute hessian
     compute_hessian_init: bool = False

@@ -33,8 +33,14 @@ class TrainState(train_state.TrainState):
     batch_stats: Any
 
 class EffectiveRankAgent:
-    def __init__(self, network):
+    def __init__(self, network, use_spectral_reg=False, spectral_k=2,
+                 spectral_target=2.0, spectral_reg_strength=0.1, spectral_power_iter=10):
         self.network = network
+        self.use_spectral_reg = use_spectral_reg
+        self.spectral_k = spectral_k
+        self.spectral_target = spectral_target
+        self.spectral_reg_strength = spectral_reg_strength
+        self.spectral_power_iter = spectral_power_iter
         self.loss = jax.jit(self.loss)
         self.effective_rank_loss = jax.jit(self.effective_rank_loss)
     
@@ -71,6 +77,15 @@ class EffectiveRankAgent:
         labels_one_hot = y[:, active_classes]
 
         loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=labels_one_hot))
+        if self.use_spectral_reg:
+            spectral_reg = compute_spectral_regularization(
+                params,
+                k=self.spectral_k,
+                target=self.spectral_target,
+                reg_strength=self.spectral_reg_strength,
+                num_iter=self.spectral_power_iter,
+            )
+            loss = loss + spectral_reg
         return loss, (logits, features, updates)
     
     def hessian_loss(self, params, batch_stats, x, y, train, active_classes):
@@ -111,8 +126,55 @@ def perturb_params(params, rng, scale):
     
     return params, rngs[-1]
 
+def power_iteration(w, num_iter=10, rng_key=None):
+    """Compute largest singular value using power iteration."""
+    eps = 1e-6
+    if rng_key is None:
+        rng_key = jax.random.PRNGKey(0)
+
+    v = jax.random.normal(rng_key, (w.shape[1], ))
+
+    for _ in range(num_iter):
+        wv = jnp.matmul(w, v)
+        v = jnp.matmul(w.T, wv)
+        v = v / (jnp.linalg.norm(v) + eps)
+
+    Av = jnp.matmul(w, v)
+    s = jnp.linalg.norm(Av)
+    u = Av / (s + eps)
+
+    return s, u, v
+
+def compute_spectral_regularization(params, k=2, target=2.0, reg_strength=0.1, num_iter=10):
+    """Compute spectral regularization on network parameters."""
+    reg = 0.0
+    param_idx = 0
+
+    for path, leaf in jax.tree_util.tree_leaves_with_path(params):
+        if len(path) >= 2:
+            param_type = path[-1].key if hasattr(path[-1], 'key') else str(path[-1])
+
+            if param_type == 'kernel':
+                if leaf.ndim < 2:
+                    continue
+                weight_matrix = leaf
+                if leaf.ndim > 2:
+                    # Flatten conv kernels to (in_dim, out_dim)
+                    weight_matrix = leaf.reshape(-1, leaf.shape[-1])
+                rng_key = jax.random.PRNGKey(param_idx)
+                largest_sv, _, _ = power_iteration(weight_matrix, num_iter=num_iter, rng_key=rng_key)
+                spectral_reg = (largest_sv**k - target)**2
+                reg += reg_strength * spectral_reg
+                param_idx += 1
+            elif param_type == 'bias':
+                reg += reg_strength * jnp.sum((leaf - 0.0)**2)
+            elif param_type == 'scale':
+                reg += reg_strength * jnp.sum((leaf - 1.0)**2)
+
+    return reg
+
 def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
-    network = build_resnet18(num_classes=100)
+    network = build_resnet18(num_classes=100, use_layernorm=args.use_layernorm)
 
     num_tasks = args.num_tasks
     train_images_per_class = 500
@@ -141,7 +203,14 @@ def make_train(args: IncrementalCIFARHyperparams, rng: chex.PRNGKey):
     class_order = jax.random.permutation(order_key, num_classes)
 
     def train(lr, er_lr, rng):
-        agent = EffectiveRankAgent(network)
+        agent = EffectiveRankAgent(
+            network,
+            use_spectral_reg=args.use_spectral_reg,
+            spectral_k=args.spectral_k,
+            spectral_target=args.spectral_target,
+            spectral_reg_strength=args.spectral_reg_strength,
+            spectral_power_iter=args.spectral_power_iter,
+        )
         dummy_input = jnp.ones([1, 32, 32, 3])
         variables = network.init(rng, dummy_input, train=True)
 

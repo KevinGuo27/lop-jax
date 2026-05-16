@@ -120,6 +120,7 @@ class BasicBlock(nn.Module):
 class ResNet18(nn.Module):
     num_classes: int
     zero_init_residual: bool = False
+    use_layernorm: bool = False
 
     @nn.compact
     def __call__(
@@ -173,6 +174,8 @@ class ResNet18(nn.Module):
             bias_init=BIAS_INIT_ZEROS,
             name='Dense_0'
         )(x)
+        if self.use_layernorm:
+            x = nn.LayerNorm(name='LN_0')(x)
         x1 = nn.relu(x)
         x2 = nn.Dense(
             512,
@@ -181,6 +184,8 @@ class ResNet18(nn.Module):
             bias_init=BIAS_INIT_ZEROS,
             name='Dense_1'
         )(x1)
+        if self.use_layernorm:
+            x2 = nn.LayerNorm(name='LN_1')(x2)
         x2 = nn.relu(x2)
         feature_dict['Dense_0'] = None
         feature_dict['Dense_1'] = x1
@@ -195,5 +200,5 @@ class ResNet18(nn.Module):
         return x3, feature_dict
 
 
-def build_resnet18(num_classes: int) -> ResNet18:
-    return ResNet18(num_classes=num_classes)
+def build_resnet18(num_classes: int, use_layernorm: bool = False) -> ResNet18:
+    return ResNet18(num_classes=num_classes, use_layernorm=use_layernorm)

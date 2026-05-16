@@ -13,9 +13,10 @@ class Hyperparams(Tap):
 # CURRENT SET-UP: BASE DL / L2 AGENT 
 class IncrementalCIFARHyperparams(Hyperparams):
     env: str = 'incremental_cifar'
-    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2' # base DL uses l2
+    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er', 'layernorm_l2', 'spectral_reg'] = 'l2' # base DL uses l2
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
+    use_layernorm: bool = False
     lr: list[float] = [0.1]
     optimizer: Literal['adam', 'sgd'] = 'sgd'
     weight_decay: float = 0.0005 # Do we use L2 regularization?
@@ -31,6 +32,13 @@ class IncrementalCIFARHyperparams(Hyperparams):
     er_lr: list[float] = [0.01]
     er_batch: int = 5
     er_step: int = 1
+
+    # Spectral Regularization
+    use_spectral_reg: bool = False
+    spectral_reg_strength: float = 0.1
+    spectral_k: int = 2
+    spectral_target: float = 2.0
+    spectral_power_iter: int = 10
 
     # RESET NETWORK
     reset: bool = False  # Do we reset the network after each task?

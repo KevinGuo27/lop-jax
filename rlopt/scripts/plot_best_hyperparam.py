@@ -168,6 +168,7 @@ if __name__ == "__main__":
         ('BP', Path('/users/kguo32/rl-opt/rlopt/results/bp'), paired_colors[5]),
         ('CBP + L2', Path('/users/kguo32/rl-opt/rlopt/results/cbp_l2'), paired_colors[9]),
         ('Perturb + L2', Path('/users/kguo32/rl-opt/rlopt/results/snp_l2'), paired_colors[11]),
+        ('LayerNorm', Path('/users/kguo32/rl-opt/rlopt/results/layernorm_l2'), paired_colors[0]),
         # ('BP + muon', Path('/users/kguo32/rl-opt/rlopt/results/bp_muon'), 'red')
     ]
 

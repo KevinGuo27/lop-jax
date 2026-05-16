@@ -86,8 +86,9 @@ if __name__ == "__main__":
         ('ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/er_hessian_fix_lr'), paired_colors[3]),
         ('BP', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp_hessian_fix_lr'), paired_colors[5]),
         ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_hessian_fix_lr'), paired_colors[7]),
-        ('LayerNorm', Path('/users/kguo32/rl-opt/permuted_mnist/results/laynorm_l2'), paired_colors[11]),
-        ('Spectral Reg', Path('/users/kguo32/rl-opt/permuted_mnist/results/spectral_reg'), paired_colors[8]),
+        ('LayerNorm', Path('/users/kguo32/rl-opt/permuted_mnist/results/laynorm_l2'), paired_colors[0]),
+        ('Spectral Reg', Path('/users/kguo32/rl-opt/permuted_mnist/results/spectral_reg'), paired_colors[11]),
+        # ('BP_MSE', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp_mse'), paired_colors[5]),
         # ('SNP + L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/snp_l2'), paired_colors[11]),
     ]
 

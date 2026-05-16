@@ -96,9 +96,10 @@ class DeepFFNN(nn.Module):
         return out, activations
 
 class EffectiveRankAgent:
-    def __init__(self, network: DeepFFNN, use_spectral_reg=False, spectral_k=2, 
+    def __init__(self, network: DeepFFNN, loss_type='cross_entropy', use_spectral_reg=False, spectral_k=2, 
                  spectral_target=2.0, spectral_reg_strength=0.1, spectral_power_iter=10):
         self.network = network
+        self.loss_type = loss_type
         self.use_spectral_reg = use_spectral_reg
         self.spectral_k = spectral_k
         self.spectral_target = spectral_target
@@ -127,7 +128,11 @@ class EffectiveRankAgent:
 
     def loss(self, params, x, y):
         output, features = self.network.apply(params, x)
-        loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
+        if self.loss_type == 'mse':
+            one_hot = jax.nn.one_hot(y, output.shape[-1])
+            loss = jnp.mean((output - one_hot) ** 2)
+        else:
+            loss = jnp.mean(optax.softmax_cross_entropy_with_integer_labels(logits=output, labels=y))
         
         if self.use_spectral_reg:
             spectral_reg = compute_spectral_regularization(
@@ -237,6 +242,7 @@ def make_train(args: PermutedMnistHyperparams, rng: chex.PRNGKey):
     def train(lr, er_lr, rng):
         agent = EffectiveRankAgent(
             network,
+            loss_type=args.loss_type,
             use_spectral_reg=args.use_spectral_reg,
             spectral_k=args.spectral_k,
             spectral_target=args.spectral_target,

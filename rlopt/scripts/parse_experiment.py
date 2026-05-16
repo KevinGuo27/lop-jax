@@ -13,7 +13,7 @@ import numpy as np
 from tqdm import tqdm
 
 from definitions import ROOT_DIR
-from pobax.utils.file_system import load_info
+from rlopt.utils.file_system import load_info
 
 def combine_seeds_and_envs(x: jnp.ndarray):
     # Here, dim=-1 is the NUM_ENVS parameter. We take the mean over this.
@@ -31,7 +31,7 @@ def combine_seeds_and_envs(x: jnp.ndarray):
 
 def parse_exp_dir(study_path, study_hparam_path):
     # TODO: THIS
-    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr', 'perturb_scale']
+    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr', 'perturb_scale', 'spectral_reg_strength']
     study_paths = list(study_path.iterdir())
     # remove the path that ends with best_hyperparam_per_env_res.pkl
     study_paths = [path for path in study_paths if not path.name.endswith('best_hyperparam_per_env_res.pkl')]

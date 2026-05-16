@@ -83,12 +83,14 @@ if __name__ == "__main__":
     # Get set2 color palette
     paired_colors = cm.Paired(np.linspace(0, 1, 12))
     study_paths = [
-        # ('CBP', Path('/users/kguo32/rl-opt/imagenet/results/cbp_hessian'), paired_colors[9]),
-        # ('L2 + ER', Path('/users/kguo32/rl-opt/imagenet/results/l2_er_hessian'), paired_colors[1]),
-        ('ER', Path('/users/kguo32/rl-opt/imagenet/results/er_single'), paired_colors[3]),
-        # ('BP', Path('/users/kguo32/rl-opt/imagenet/results/bp_hessian'), paired_colors[5]),
-        # ('L2', Path('/users/kguo32/rl-opt/imagenet/results/l2_hessian'), paired_colors[7]),
-        # ('L2 + Perturb', Path('/users/kguo32/rl-opt/imagenet/results/snp_l2'), paired_colors[11]),
+        ('CBP', Path('/users/kguo32/data/kguo32/lop/imagenet/results/cbp_hessian'), paired_colors[9]),
+        ('L2 + ER', Path('/users/kguo32/data/kguo32/lop/imagenet/results/l2_er_hessian'), paired_colors[1]),
+        ('ER', Path('/users/kguo32/data/kguo32/lop/imagenet/results/er_hessian'), paired_colors[3]),
+        ('BP', Path('/users/kguo32/data/kguo32/lop/imagenet/results/bp_hessian'), paired_colors[5]),
+        ('L2', Path('/users/kguo32/data/kguo32/lop/imagenet/results/l2_hessian'), paired_colors[7]),
+        ('Spectral Reg', Path('/users/kguo32/scratch/imagenet/results/spectral_reg_hessian'), paired_colors[8]),
+        ('LayerNorm + L2', Path('/users/kguo32/scratch/imagenet/results/laynorm_l2_hessian'), paired_colors[11]),
+        # ('L2 + Perturb', Path('/users/kguo32/rl-opt/imagenet/results/snp_l2_hessian'), paired_colors[11]),
     ]
 
     all_reses = []
@@ -100,8 +102,8 @@ if __name__ == "__main__":
     fig, ax = plot_reses(all_reses, metric=metric)
 
     # You could use plot_name if you want:
-    plot_name = f"{env_name}_{metric}_er_single.pdf"
-    save_path = Path('/users/kguo32/rl-opt/imagenet/results') / plot_name
+    plot_name = f"{env_name}_{metric}.pdf"
+    save_path = Path('/users/kguo32/data/kguo32/lop/imagenet/results') / plot_name
 
     fig.savefig(save_path, bbox_inches='tight')
     print(f"Saved figure to {save_path}")

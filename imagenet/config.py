@@ -12,7 +12,7 @@ class Hyperparams(Tap):
 
 class ImagenetHyperparams(Hyperparams):
     env: str = 'imagenet'
-    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er'] = 'l2_er'
+    agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er', 'laynorm_l2', 'spectral_reg'] = 'l2_er'
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
     lr: list[float] = [0.01]
@@ -24,15 +24,25 @@ class ImagenetHyperparams(Hyperparams):
     no_anneal_lr: bool = True
     max_grad_norm: float = 1e9
     num_tasks: int = 2000
-    num_epochs: int = 250
+    num_epochs: int = 20
     momentum: float = 0.9
     # Effective Rank
     er_lr: list[float] = [0.01]
-    er_batch: int = 1
+    er_batch: int = 12
     er_step: int = 1
 
     # SVM
     svm: bool = False
+
+    # Model Architecture
+    use_layernorm: bool = False
+
+    # Spectral Regularization
+    use_spectral_reg: bool = False
+    spectral_reg_strength: float = 0.1
+    spectral_k: int = 2
+    spectral_target: float = 2.0
+    spectral_power_iter: int = 10
 
     # Evaluation
     evaluate: bool = True # Do we evaluate after each task?

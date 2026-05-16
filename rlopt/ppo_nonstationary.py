@@ -44,11 +44,21 @@ class PPO:
     def __init__(self, network,
                  vf_coeff: float = 0.,
                  entropy_coeff: float = 0.01,
-                 clip_eps: float = 0.2):
+                 clip_eps: float = 0.2,
+                 use_spectral_reg: bool = False,
+                 spectral_k: int = 2,
+                 spectral_target: float = 2.0,
+                 spectral_reg_strength: float = 0.1,
+                 spectral_power_iter: int = 10):
         self.network = network
         self.vf_coeff = vf_coeff
         self.entropy_coeff = entropy_coeff
         self.clip_eps = clip_eps
+        self.use_spectral_reg = use_spectral_reg
+        self.spectral_k = spectral_k
+        self.spectral_target = spectral_target
+        self.spectral_reg_strength = spectral_reg_strength
+        self.spectral_power_iter = spectral_power_iter
         self.act = jax.jit(self.act)
         self.loss = jax.jit(self.loss)
     
@@ -120,6 +130,15 @@ class PPO:
                 + self.vf_coeff * value_loss
                 - self.entropy_coeff * entropy
         )
+        if self.use_spectral_reg:
+            spectral_reg = compute_spectral_regularization(
+                params,
+                k=self.spectral_k,
+                target=self.spectral_target,
+                reg_strength=self.spectral_reg_strength,
+                num_iter=self.spectral_power_iter,
+            )
+            total_loss = total_loss + spectral_reg
         return total_loss, (value_loss, loss_actor, entropy)
 
 
@@ -155,6 +174,51 @@ def perturb_params(params, rng, scale):
             layer_idx += 1
     
     return params, rngs[-1]
+
+
+def power_iteration(w, num_iter=10, rng_key=None):
+    """Compute largest singular value using power iteration."""
+    eps = 1e-6
+    if rng_key is None:
+        rng_key = jax.random.PRNGKey(0)
+
+    v = jax.random.normal(rng_key, (w.shape[1], ))
+
+    for _ in range(num_iter):
+        wv = jnp.matmul(w, v)
+        v = jnp.matmul(w.T, wv)
+        v = v / (jnp.linalg.norm(v) + eps)
+
+    Av = jnp.matmul(w, v)
+    s = jnp.linalg.norm(Av)
+    u = Av / (s + eps)
+
+    return s, u, v
+
+
+def compute_spectral_regularization(params, k=2, target=2.0, reg_strength=0.1, num_iter=10):
+    """Compute spectral regularization on network parameters."""
+    reg = 0.0
+    param_idx = 0
+
+    for path, leaf in jax.tree_util.tree_leaves_with_path(params):
+        # Extract the parameter name from the path
+        if len(path) >= 2:
+            param_type = path[-1].key if hasattr(path[-1], 'key') else str(path[-1])
+
+            if param_type == 'kernel':
+                # Use deterministic key based on parameter index to avoid randomness in gradients
+                rng_key = jax.random.PRNGKey(param_idx)
+                largest_sv, _, _ = power_iteration(leaf, num_iter=num_iter, rng_key=rng_key)
+                spectral_reg = (largest_sv**k - target)**2
+                reg += reg_strength * spectral_reg
+                param_idx += 1
+            elif param_type == 'bias':
+                reg += reg_strength * jnp.sum((leaf - 0.0)**2)
+            elif param_type == 'scale':
+                reg += reg_strength * jnp.sum((leaf - 1.0)**2)
+
+    return reg
 
 
 def env_step(runner_state, unused, agent: PPO, env, env_params, args):
@@ -228,18 +292,30 @@ def make_train(args: NonStationaryPolicyHyperparams, rand_key: jax.random.PRNGKe
         action_dim = action_shape[0]
     elif isinstance(action_space, Discrete):
         action_dim = action_space.n
-    network = ActorCritic(action_dim,
-                          is_continuous=is_continuous(action_space),
-                          hidden_size=args.hidden_size,
-                          activation=args.activation)
+    network = ActorCritic(
+        action_dim,
+        is_continuous=is_continuous(action_space),
+        hidden_size=args.hidden_size,
+        activation=args.activation,
+        use_layernorm=args.use_layernorm,
+    )
     steps_filter = partial(filter_period_first_dim, n=args.steps_log_freq)
     update_filter = partial(filter_period_first_dim, n=args.update_log_freq)
 
     _calculate_gae = calculate_gae
 
     def train(vf_coeff, lambda0, er_lr, lr, rng):
-        agent = PPO(network, vf_coeff=vf_coeff,
-                    clip_eps=args.clip_eps, entropy_coeff=args.entropy_coeff)
+        agent = PPO(
+            network,
+            vf_coeff=vf_coeff,
+            clip_eps=args.clip_eps,
+            entropy_coeff=args.entropy_coeff,
+            use_spectral_reg=args.use_spectral_reg,
+            spectral_k=args.spectral_k,
+            spectral_target=args.spectral_target,
+            spectral_reg_strength=args.spectral_reg_strength,
+            spectral_power_iter=args.spectral_power_iter,
+        )
 
         # initialize functions
         _env_step = partial(env_step, agent=agent, env=env, env_params=env_params, args=args)

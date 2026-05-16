@@ -15,7 +15,7 @@ from imagenet.utils.file_system import load_info
 
 def parse_exp_dir(study_path, study_hparam_path):
     # Hyperparameters of interest
-    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr', 'perturb_scale']
+    train_sign_hparams = ['lr', 'weight_decay', 'replacement_rate', 'er_lr', 'perturb_scale', 'spectral_reg_strength']
 
     # Gather all result paths, excluding previous summary
     study_paths = list(Path(study_path).iterdir())
@@ -36,6 +36,7 @@ def parse_exp_dir(study_path, study_hparam_path):
             restored = orbax_checkpointer.restore(results_path)
 
         args = restored['args']
+
         # Key by (lr, weight_decay)
         args_tuple = tuple(
             float(v.item()) if hasattr(v, 'item') else float(v)

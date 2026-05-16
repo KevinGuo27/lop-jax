@@ -15,6 +15,7 @@ class PermutedMnistHyperparams(Hyperparams):
     agent: Literal['er', 'bp', 'l2', 'snp_l2', 'snp', 'cbp', 'l2_er', 'spectral_reg', 'laynorm_l2'] = 'l2_er'
     alg: Literal['actor_critic', 'ppo'] = 'ppo'
     activation: Literal['relu', 'tanh'] = 'relu'
+    loss_type: Literal['cross_entropy', 'mse'] = 'cross_entropy'
     lr: list[float] = [0.01]
     optimizer: Literal['adam', 'muon', 'sgd'] = 'sgd'
     weight_decay: float = 0.001 # Do we use L2 regularization?
