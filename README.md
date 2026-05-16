@@ -10,13 +10,17 @@ We show that **Hessian spectral collapse** -- the degeneration of the loss lands
 
 L2-ER maintains plasticity across all four environments. Classification accuracy is reported for supervised benchmarks; online returns for RL.
 
-![Performance across all environments](analysis/performance_comparison_2x2.png)
+<p align="center">
+  <img src="analysis/performance_comparison_2x2.png" width="600">
+</p>
 
 ## Hessian Epsilon-Rank vs. Accuracy
 
 Across tasks on Continual ImageNet, training accuracy is positively correlated with the epsilon-rank of the Hessian (R^2 = 0.711). L2-ER (blue) preserves high epsilon-rank; BP (red) collapses.
 
-![Epsilon-rank scatter plot](analysis/epsilon_hessian_rank.png)
+<p align="center">
+  <img src="analysis/epsilon_hessian_rank.png" width="500">
+</p>
 
 ## Benchmarks
 
@@ -57,17 +61,7 @@ This creates a `.venv`, resolves all dependencies (JAX with CUDA 12, PyTorch, Fl
 ### Training
 
 ```bash
-# Permuted MNIST
-uv run python -m permuted_mnist.train_permuted_mnist --agent l2_er --lr 0.01 --weight_decay 0.001 --seed 2025
-
-# Continual ImageNet
-uv run python -m imagenet.train_imagenet --agent l2_er --lr 0.01 --weight_decay 0.001 --seed 2025
-
-# Incremental CIFAR
-uv run python -m incremental_cifar.train_incremental_cifar --agent l2_er --lr 0.1 --weight_decay 0.0005 --seed 2025
-
-# Slippery Ant (RL)
-uv run python -m rlopt.ppo_nonstationary --agent l2_er --lr 0.00025 --seed 2025
+uv run python -m imagenet.train_imagenet --agent bp --weight_decay 0.0 --lr 0.0001 --seed 2054 --num_tasks 2000 --n_seeds 1 --platform gpu --study_name bp_hessian
 ```
 
 ### Hessian Computation
@@ -89,7 +83,7 @@ uv run python parse_experiments.py ../results
 ```
 This aggregates across seeds and hyperparameters, producing `best_hyperparam_per_env_res.pkl`.
 
-**3. Plot:**
+**3. Plot:** Update the results path in `plot_single_metric.py` to point to your saved results, then run:
 ```bash
 uv run python plot_single_metric.py
 ```
