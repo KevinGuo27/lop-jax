@@ -17,6 +17,9 @@ AGENT_COLOR = {
     "bp": paired_colors[5],
     "l2": paired_colors[7],
     "cbp": paired_colors[9],
+    "layernorm_l2": paired_colors[0],
+    "laynorm_l2": paired_colors[0],
+    "spectral_reg": paired_colors[11],
 }
 
 AGENT_LABELS = {
@@ -24,7 +27,10 @@ AGENT_LABELS = {
     "cbp": "CBP", 
     "l2": "L2",
     "l2_er": "L2-ER",
-    "er": "ER"
+    "er": "ER",
+    "layernorm_l2": "LayerNorm-L2",
+    "laynorm_l2": "LayerNorm-L2",
+    "spectral_reg": "Spectral"
 }
 
 
@@ -40,7 +46,7 @@ def smooth_epsilon_ranks(epsilon_ranks, sigma=1.0):
 DATASET_CONFIGS = {
     "imagenet": {
         "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
-        "default_data_root": Path("/users/kguo32/rl-opt/imagenet/hessian/data"),
+        "default_data_root": Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/imagenet/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/imagenet/hessian/plots"),
         "agent_results_map": {
@@ -48,13 +54,15 @@ DATASET_CONFIGS = {
             "cbp": "cbp_hessian", 
             "l2": "l2_hessian",
             "l2_er": "l2_er_hessian",
-            "er": "er_hessian"
+            "er": "er_hessian",
+            "laynorm_l2": "laynorm_l2_hessian",
+            "spectral_reg": "spectral_reg_hessian",
         },
         "dataset_name": "Continual ImageNet",
         "optimal_epsilon": 8e-02
     },
     "permuted_mnist": {
-        "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
+        "default_agents": ["bp", "cbp", "l2", "l2_er", "er", "laynorm_l2", "spectral_reg"],
         "default_data_root": Path("/users/kguo32/rl-opt/permuted_mnist/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/permuted_mnist/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/permuted_mnist/hessian/plots"),
@@ -63,22 +71,26 @@ DATASET_CONFIGS = {
             "cbp": "cbp_hessian_fix_lr", 
             "l2": "l2_hessian_fix_lr",
             "l2_er": "l2_er_hessian_fix_lr",
-            "er": "er_hessian_fix_lr"
+            "er": "er_hessian_fix_lr",
+            "laynorm_l2": "laynorm_l2_hessian_fix_lr",
+            "spectral_reg": "spectral_reg_hessian_fix_lr"
         },
         "dataset_name": "Permuted MNIST",
-        "optimal_epsilon": 2e-02
+        "optimal_epsilon": 1e-02
     },
     "incremental_cifar": {
-        "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
-        "default_data_root": Path("/users/kguo32/rl-opt/incremental_cifar/full_hessian/data"),
+        "default_agents": ["bp", "cbp", "l2", "l2_er", "er", "layernorm_l2", "spectral_reg"],
+        "default_data_root": Path("/users/kguo32/rl-opt/incremental_cifar/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/incremental_cifar/results"),
-        "default_out_dir": Path("/users/kguo32/rl-opt/incremental_cifar/full_hessian/plots"),
+        "default_out_dir": Path("/users/kguo32/rl-opt/incremental_cifar/hessian/plots"),
         "agent_results_map": {
             "bp": "bp_hessian",
             "cbp": "cbp_hessian", 
             "l2": "l2_hessian",
             "l2_er": "l2_er_hessian",
-            "er": "er_hessian"
+            "er": "er_hessian",
+            "laynorm_l2": "laynorm_l2",
+            "spectral_reg": "spec_reg_hessian",
         },
         "dataset_name": "Incremental CIFAR",
         "optimal_epsilon": 4e-02
@@ -352,7 +364,7 @@ def plot_dataset_subplot(ax, dataset_type, mode="train", phase="init", epsilon=N
         ax.plot(x_line, y_line, 'k--', alpha=0.8, linewidth=2)
     
     # Set labels and title
-    ax.set_xlabel(f"Percentage of eigenvalues outside $(-{float(epsilon):.2f}, {float(epsilon):.2f})$", fontsize=32)
+    ax.set_xlabel(f"Normalized $\epsilon$-rank, $\epsilon$={float(epsilon):.2f}", fontsize=32)
     
     # Set y-axis label based on dataset type
     if dataset_type == "incremental_cifar" and reset_accuracy is not None:
@@ -372,6 +384,8 @@ def plot_dataset_subplot(ax, dataset_type, mode="train", phase="init", epsilon=N
     # Fix minus sign display on y-axis for incremental CIFAR
     if dataset_type == "incremental_cifar" and reset_accuracy is not None:
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.3f}'))
+    elif dataset_type == "permuted_mnist":
+        ax.set_ylim(bottom=0.87)
     
     return ax
 
@@ -486,7 +500,7 @@ def plot_dataset_subplot_full(ax, dataset_type, mode="train", phase="init", epsi
         ax.plot(x_line, y_line, 'k--', alpha=0.8, linewidth=2)
     
     # Set labels and title
-    ax.set_xlabel(f"Percentage of eigenvalues outside $(-{float(epsilon):.2f}, {float(epsilon):.2f})$", fontsize=32)
+    ax.set_xlabel(f"Normalized $\epsilon$-rank, $\epsilon$={float(epsilon):.2f}", fontsize=32)
     
     # Set y-axis label based on dataset type
     if dataset_type == "incremental_cifar" and reset_accuracy is not None:
@@ -540,12 +554,12 @@ def main():
         legend_handles.append(new_handle)
     
     # Create legend at the bottom of the figure
-    fig.legend(legend_handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.08), 
-               ncol=len(legend_handles), fontsize=32)
+    fig.legend(legend_handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.02), 
+               ncol=len(legend_handles), fontsize=20)
     
     # Adjust layout to make room for the legend and add vertical spacing between subplots
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.12, hspace=0.3)
+    plt.subplots_adjust(bottom=0.08, hspace=0.3)
     
     # Save the combined plot
     out_dir = Path("/users/kguo32/rl-opt/analysis")

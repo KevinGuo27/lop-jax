@@ -65,13 +65,16 @@ def plot_metric_in_ax(ax, all_reses, metric: str, title: str, is_rl_data: bool =
             
             # Handle data shapes
             num_tasks = sample.shape[-2] if len(sample.shape) > 2 else sample.shape[-1]
+            if 'Incremental CIFAR' in title:
+                num_tasks = min(num_tasks, 19)
             x = np.arange(num_tasks)
             
             if len(sample.shape) > 2:
-                data = data.reshape(data.shape[0], num_tasks, -1)
+                data = data.reshape(data.shape[0], -1, data.shape[-1])
+                data = data[:, :num_tasks, :]
                 data = np.sum(data, axis=-1)
             else:
-                data = data.reshape(data.shape[0], num_tasks)
+                data = data.reshape(data.shape[0], -1)[:, :num_tasks]
                 
             means = data.mean(axis=0)
             errs = sem(data, axis=0) if data.shape[0] > 1 else np.zeros_like(means)
@@ -107,7 +110,11 @@ def load_data(study_paths, is_rl=False):
             else:
                 hyperparams_dir = study_path.parent.parent / 'scripts' / 'hyperparams'
                 study_hparam_filename = study_path.stem + '.py'
-                hyperparam_path = hyperparams_dir / 'nonstationary' / 'hessian' / study_hparam_filename
+                use_non_hessian = study_path.name in {"layernorm_l2", "spectral_reg"}
+                if use_non_hessian:
+                    hyperparam_path = hyperparams_dir / 'nonstationary' / study_hparam_filename
+                else:
+                    hyperparam_path = hyperparams_dir / 'nonstationary' / 'hessian' / study_hparam_filename
                 step_multiplier = get_total_steps_multiplier(best_res['scores'].shape[0], hyperparam_path)
             best_res['step_multiplier'] = [step_multiplier] * len(best_res['envs'])
         
@@ -143,6 +150,8 @@ def create_combined_plot():
             ('ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/er_hessian_fix_lr'), paired_colors[3]),
             ('BP', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp_hessian_fix_lr'), paired_colors[5]),
             ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_hessian_fix_lr'), paired_colors[7]),
+            ('LayerNorm-L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/laynorm_l2_hessian_fix_lr'), paired_colors[0]),
+            ('Spectral', Path('/users/kguo32/rl-opt/permuted_mnist/results/spectral_reg_hessian_fix_lr'), paired_colors[11]),
         ],
         'imagenet': [
             ('CBP', Path('/users/kguo32/rl-opt/imagenet/results/cbp_hessian'), paired_colors[9]),
@@ -150,6 +159,8 @@ def create_combined_plot():
             ('ER', Path('/users/kguo32/rl-opt/imagenet/results/er_hessian'), paired_colors[3]),
             ('BP', Path('/users/kguo32/rl-opt/imagenet/results/bp_hessian'), paired_colors[5]),
             ('L2', Path('/users/kguo32/rl-opt/imagenet/results/l2_hessian'), paired_colors[7]),
+            ('LayerNorm-L2', Path('/users/kguo32/rl-opt/imagenet/results/laynorm_l2_hessian'), paired_colors[0]),
+            ('Spectral', Path('/users/kguo32/rl-opt/imagenet/results/spectral_reg_hessian'), paired_colors[11]),
         ],
         'cifar': [
             ('CBP', Path('/users/kguo32/rl-opt/incremental_cifar/results/cbp_hessian'), paired_colors[9]),
@@ -157,6 +168,8 @@ def create_combined_plot():
             ('ER', Path('/users/kguo32/rl-opt/incremental_cifar/results/er_hessian'), paired_colors[3]),
             ('BP', Path('/users/kguo32/rl-opt/incremental_cifar/results/bp_hessian'), paired_colors[5]),
             ('L2', Path('/users/kguo32/rl-opt/incremental_cifar/results/l2_hessian'), paired_colors[7]),
+            ('LayerNorm-L2', Path('/users/kguo32/rl-opt/incremental_cifar/results/layernorm_l2'), paired_colors[0]),
+            ('Spectral', Path('/users/kguo32/rl-opt/incremental_cifar/results/spec_reg_hessian'), paired_colors[11]),
             ('RESET', Path('/users/kguo32/rl-opt/incremental_cifar/results/reset_hessian'), 'black')
         ],
         'rl': [
@@ -164,6 +177,8 @@ def create_combined_plot():
             ('ER', Path('/users/kguo32/rl-opt/rlopt/results/er_hessian'), paired_colors[3]),
             ('L2', Path('/users/kguo32/rl-opt/rlopt/results/l2_hessian'), paired_colors[7]),
             ('BP', Path('/users/kguo32/rl-opt/rlopt/results/bp_hessian'), paired_colors[5]),
+            ('LayerNorm-L2', Path('/users/kguo32/rl-opt/rlopt/results/layernorm_l2'), paired_colors[0]),
+            ('Spectral', Path('/users/kguo32/rl-opt/rlopt/results/spectral_reg'), paired_colors[11]),
             ('CBP + L2', Path('/users/kguo32/rl-opt/rlopt/results/cbp_l2_hessian'), paired_colors[9]),
         ]
     }

@@ -18,6 +18,8 @@ AGENT_COLOR = {
     "bp": paired_colors[5],
     "l2": paired_colors[7],
     "cbp": paired_colors[9],
+    "laynorm_l2": paired_colors[0],
+    "spectral_reg": paired_colors[11],
 }
 
 AGENT_LABELS = {
@@ -25,7 +27,9 @@ AGENT_LABELS = {
     "cbp": "CBP", 
     "l2": "L2",
     "l2_er": "L2-ER (Ours)",
-    "er": "ER"
+    "er": "ER",
+    "laynorm_l2": "LayerNorm-L2",
+    "spectral_reg": "Spectral Reg"
 }
 
 FNAME_RE = re.compile(r"hessian_task_(\d+)_(init|end)\.npy$")
@@ -39,8 +43,8 @@ def smooth_epsilon_ranks(epsilon_ranks, sigma=1.0):
 # Dataset configurations
 DATASET_CONFIGS = {
     "imagenet": {
-        "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
-        "default_data_root": Path("/users/kguo32/rl-opt/imagenet/hessian/data"),
+        "default_agents": ["bp", "cbp", "l2", "l2_er", "er", "laynorm_l2", "spectral_reg"],
+        "default_data_root": Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/imagenet/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/imagenet/hessian/plots"),
         "agent_results_map": {
@@ -48,7 +52,9 @@ DATASET_CONFIGS = {
             "cbp": "cbp_hessian", 
             "l2": "l2_hessian",
             "l2_er": "l2_er_hessian",
-            "er": "er_hessian"
+            "er": "er_hessian",
+            "laynorm_l2": "laynorm_l2_hessian",
+            "spectral_reg": "spectral_reg_hessian",
         },
         "dataset_name": "ImageNet"
     }
@@ -149,7 +155,7 @@ def plot_hessian_spectrum(grids, density, epsilon, agent, seed, task, mode, phas
 def main():
     parser = argparse.ArgumentParser(description="Demo: Epsilon rank graph with two circled points and their hessian spectra")
     parser.add_argument("--data-root", type=Path, 
-                        default=Path("/users/kguo32/rl-opt/imagenet/hessian/data"),
+                        default=Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/data"),
                         help="Root directory containing hessian data")
     parser.add_argument("--results-root", type=Path, 
                         default=Path("/users/kguo32/rl-opt/imagenet/results"),
@@ -159,7 +165,7 @@ def main():
                         help="Output directory for plots")
     parser.add_argument("--mode", type=str, choices=["train", "test"], default="train")
     parser.add_argument("--phase", type=str, choices=["init", "end"], default="init")
-    parser.add_argument("--epsilon", type=float, default=1e-1,
+    parser.add_argument("--epsilon", type=float, default=3e-2,
                         help="Fixed epsilon threshold")
 
     args = parser.parse_args()
@@ -244,11 +250,12 @@ def main():
         ax.plot(x_line, y_line, 'k--', alpha=0.8, linewidth=2, 
                 label=f'$R^2$={r_value**2:.3f}')
 
-    ax.set_xlabel(f"Percentage of eigenvalues within $\\epsilon$={args.epsilon:.1f}", fontsize=20)
+    ax.set_xlabel(f"Normalized $\epsilon$-rank, $\epsilon$={args.epsilon:.2f}", fontsize=20)
     ax.set_ylabel("Accuracy", fontsize=20)
     ax.legend(fontsize=22)
     ax.grid(True, alpha=0.3)
     ax.tick_params(axis='both', which='major', labelsize=16)
+    ax.set_ylim(bottom=0.45)
     
     # Select BP points at task 100 (square) and task 1400 (triangle)
     target_task_square = 100

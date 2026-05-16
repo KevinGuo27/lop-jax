@@ -12,7 +12,7 @@ from matplotlib import rc
 rc('font', **{'family': 'serif', 'serif': ['cmr10']})
 rc('axes', unicode_minus=False)
 
-def plot_reses_in_ax(ax, all_reses, metric: str, title: str):
+def plot_reses_in_ax(ax, all_reses, metric: str, title: str, font_scale: float = 1.7):
     """
     Plot data in a given axis without legend
     all_reses: list of (study_name, res_dict, color_key)
@@ -62,13 +62,13 @@ def plot_reses_in_ax(ax, all_reses, metric: str, title: str):
                            color=color, alpha=alpha_value * 0.25)
             
         # Slightly larger font sizes for combined plot
-        ax.set_xlabel('Environment steps', fontsize=28)
-        ax.set_ylabel('Online returns', fontsize=28)
-        ax.tick_params(axis='both', which='major', labelsize=24)
+        ax.set_xlabel('Environment steps', fontsize=int(28 * font_scale))
+        ax.set_ylabel('Online returns', fontsize=int(28 * font_scale))
+        ax.tick_params(axis='both', which='major', labelsize=int(24 * font_scale))
         
         # Make scientific notation larger on x-axis
         ax.ticklabel_format(style='scientific', axis='x', scilimits=(0,0))
-        ax.xaxis.get_offset_text().set_fontsize(20)
+        ax.xaxis.get_offset_text().set_fontsize(int(20 * font_scale))
         
         # Set exact same y-axis limits as original
         ax.set_ylim(-2000, 4000)
@@ -90,6 +90,9 @@ def plot_reses_in_ax(ax, all_reses, metric: str, title: str):
                     data = data.reshape(data.shape[0], -1)
                 
                 num_tasks = data.shape[-1]
+                if title == 'Incremental CIFAR' and study_name in {"LayerNorm-L2", "Spectral Reg"}:
+                    num_tasks = min(num_tasks, 19)
+                    data = data[:, :num_tasks]
                 x = np.arange(num_tasks)
             else:
                 # For other metrics, assume second-to-last dimension is tasks
@@ -115,18 +118,18 @@ def plot_reses_in_ax(ax, all_reses, metric: str, title: str):
             ax.fill_between(x, means-errs, means+errs,
                            alpha=alpha_value * 0.25, color=color)
 
-        ax.set_xlabel('Task', fontsize=28)
+        ax.set_xlabel('Task', fontsize=int(28 * font_scale))
         if metric in ['accuracy', 'accuracy_eval']:
-            ax.set_ylabel('Accuracy', fontsize=28)
+            ax.set_ylabel('Accuracy', fontsize=int(28 * font_scale))
         else:
-            ax.set_ylabel(metric.replace('_', ' ').capitalize(), fontsize=28)
-        ax.tick_params(axis='both', which='major', labelsize=24)
+            ax.set_ylabel(metric.replace('_', ' ').capitalize(), fontsize=int(28 * font_scale))
+        ax.tick_params(axis='both', which='major', labelsize=int(24 * font_scale))
         
         # Set specific x-axis formatting for Incremental CIFAR
         if title == 'Incremental CIFAR':
             ax.set_xticks(range(0, 20, 5))  # Ticks at 0, 5, 10, 15
     
-    ax.set_title(title, fontsize=30, fontweight='bold')
+    ax.set_title(title, fontsize=int(30 * font_scale), fontweight='bold')
 
 def load_imagenet_data():
     """Load ImageNet data"""
@@ -137,6 +140,8 @@ def load_imagenet_data():
         ('ER', Path('/users/kguo32/rl-opt/imagenet/results/er_hessian'), paired_colors[3]),
         ('BP', Path('/users/kguo32/rl-opt/imagenet/results/bp_hessian'), paired_colors[5]),
         ('L2', Path('/users/kguo32/rl-opt/imagenet/results/l2_hessian'), paired_colors[7]),
+        ('LayerNorm-L2', Path('/users/kguo32/data/kguo32/lop/imagenet/results/laynorm_l2_hessian'), paired_colors[0]),
+        ('Spectral Reg', Path('/users/kguo32/data/kguo32/lop/imagenet/results/spectral_reg_hessian'), paired_colors[11]),
         # ('L2 + Perturb', Path('/users/kguo32/rl-opt/imagenet/results/snp_l2'), paired_colors[11]),
     ]
 
@@ -157,6 +162,8 @@ def load_cifar_data():
         ('ER', Path('/users/kguo32/rl-opt/incremental_cifar/results/er_hessian'), paired_colors[3]),
         ('BP', Path('/users/kguo32/rl-opt/incremental_cifar/results/bp_hessian'), paired_colors[5]),
         ('L2', Path('/users/kguo32/rl-opt/incremental_cifar/results/l2_hessian'), paired_colors[7]),
+        ('LayerNorm-L2', Path('/users/kguo32/rl-opt/incremental_cifar/results/layernorm_l2'), paired_colors[0]),
+        ('Spectral Reg', Path('/users/kguo32/rl-opt/incremental_cifar/results/spectral_reg'), paired_colors[11]),
         ('RESET', Path('/users/kguo32/rl-opt/incremental_cifar/results/reset_hessian'), 'black')
     ]
 
@@ -177,6 +184,8 @@ def load_mnist_data():
         ('ER', Path('/users/kguo32/rl-opt/permuted_mnist/results/er_hessian_fix_lr'), paired_colors[3]),
         ('BP', Path('/users/kguo32/rl-opt/permuted_mnist/results/bp_hessian_fix_lr'), paired_colors[5]),
         ('L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/l2_hessian_fix_lr'), paired_colors[7]),
+        ('LayerNorm-L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/laynorm_l2_hessian_fix_lr'), paired_colors[0]),
+        ('Spectral', Path('/users/kguo32/rl-opt/permuted_mnist/results/spectral_reg_hessian_fix_lr'), paired_colors[11]),
         # ('SNP + L2', Path('/users/kguo32/rl-opt/permuted_mnist/results/snp_l2'), paired_colors[11]),
     ]
 
@@ -215,6 +224,8 @@ def load_rl_data():
         ('L2', Path('/users/kguo32/rl-opt/rlopt/results/l2'), paired_colors[7]),
         ('BP', Path('/users/kguo32/rl-opt/rlopt/results/bp'), paired_colors[5]),
         ('CBP + L2', Path('/users/kguo32/rl-opt/rlopt/results/cbp_l2'), paired_colors[9]),
+        ('LayerNorm-L2', Path('/users/kguo32/rl-opt/rlopt/results/layernorm_l2'), paired_colors[0]),
+        ('Spectral Reg', Path('/users/kguo32/rl-opt/rlopt/results/spectral_reg'), paired_colors[11]),
         # ('Perturb + L2', Path('/users/kguo32/rl-opt/rlopt/results/snp_l2'), paired_colors[11]),
     ]
 
@@ -240,7 +251,8 @@ def load_rl_data():
 
 def create_combined_plot():
     """Create the 1x4 combined plot"""
-    fig, axes = plt.subplots(1, 4, figsize=(30, 6))
+    fig, axes = plt.subplots(1, 4, figsize=(40, 8))
+    font_scale = 1.6
     
     # Load data for all four experiments
     mnist_data = load_mnist_data()
@@ -249,10 +261,10 @@ def create_combined_plot():
     rl_data = load_rl_data()
     
     # Plot each subplot in the requested order: MNIST, ImageNet, CIFAR, Slippery Ant
-    plot_reses_in_ax(axes[0], mnist_data, 'accuracy', 'Permuted MNIST')
-    plot_reses_in_ax(axes[1], imagenet_data, 'accuracy_eval', 'Continual ImageNet')
-    plot_reses_in_ax(axes[2], cifar_data, 'accuracy_eval', 'Incremental CIFAR') 
-    plot_reses_in_ax(axes[3], rl_data, 'scores', 'Slippery Ant')
+    plot_reses_in_ax(axes[0], mnist_data, 'accuracy', 'Permuted MNIST', font_scale=font_scale)
+    plot_reses_in_ax(axes[1], imagenet_data, 'accuracy_eval', 'Continual ImageNet', font_scale=font_scale)
+    plot_reses_in_ax(axes[2], cifar_data, 'accuracy_eval', 'Incremental CIFAR', font_scale=font_scale)
+    plot_reses_in_ax(axes[3], rl_data, 'scores', 'Slippery Ant', font_scale=font_scale)
     
     # Create a shared legend
     # Get the labels from the first subplot (they should be consistent across all)
@@ -280,13 +292,13 @@ def create_combined_plot():
         handle.set_linewidth(3)
     
     # Add the legend to the figure (positioned outside the subplots)
-    fig.legend(handles, labels, loc='center', bbox_to_anchor=(0.5, -0.04), 
-              ncol=len(labels), fontsize=30, frameon=True, fancybox=True, 
+    fig.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.27), 
+              ncol=len(labels), fontsize=int(26 * font_scale), frameon=True, fancybox=True, 
               shadow=True, borderpad=1.0, columnspacing=1.0)
     
     # Adjust layout to make room for the legend
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.2)
+    plt.subplots_adjust(bottom=0.18, wspace=0.3)
     
     return fig
 

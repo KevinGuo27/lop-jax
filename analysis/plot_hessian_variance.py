@@ -36,8 +36,8 @@ FNAME_RE = re.compile(r"hessian_task_(\d+)_(init|end)\.npy$")
 DATASET_CONFIGS = {
     "imagenet": {
         "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
-        "default_data_root": Path("/users/kguo32/rl-opt/imagenet/hessian/data"),
-        "default_out_dir": Path("/users/kguo32/rl-opt/imagenet/hessian/plots"),
+        "default_data_root": Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/data"),
+        "default_out_dir": Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/plots"),
         "dataset_name": "ImageNet"
     },
     "permuted_mnist": {
@@ -156,7 +156,7 @@ def gather_agent_seed_matrix(agent_dir: Path, mode: str, phase: str,
 def main():
     parser = argparse.ArgumentParser(description="Plot task vs Hessian variance with multi-seed mean ± SEM, with optional eigenvalue (grid) trimming.")
     parser.add_argument("--data-root", type=Path,
-                        default=Path("/users/kguo32/rl-opt/imagenet/hessian/data"))
+                        default=Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/data"))
     parser.add_argument("--agents", type=str, nargs="*", default=DEFAULT_AGENTS)
     parser.add_argument("--mode", type=str, choices=["train", "test"], default="train")
     parser.add_argument("--phase", type=str, choices=["init", "end"], default="init")
@@ -175,7 +175,7 @@ def main():
 
     args = parser.parse_args()
 
-    out_dir = args.out_dir or Path("/users/kguo32/rl-opt/imagenet/hessian/plots")
+    out_dir = args.out_dir or Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/plots")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     plt.figure(figsize=(8, 5))

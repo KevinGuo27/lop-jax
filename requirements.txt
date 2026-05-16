@@ -1,4 +1,4 @@
-jax[cuda12]
+jax[cuda12]==0.5.0
 distrax
 gymnax
 gymnasium
@@ -10,7 +10,7 @@ optax
 numpy==1.26.4
 matplotlib
 brax
-chex
-free-mujoco-py
+chex==0.1.88
+# free-mujoco-py
 gym==0.23.1
 -e .

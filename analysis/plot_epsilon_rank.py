@@ -17,6 +17,8 @@ AGENT_COLOR = {
     "bp": paired_colors[5],
     "l2": paired_colors[7],
     "cbp": paired_colors[9],
+    "laynorm_l2": paired_colors[0],
+    "spectral_reg": paired_colors[2],
 }
 
 AGENT_LABELS = {
@@ -24,7 +26,9 @@ AGENT_LABELS = {
     "cbp": "CBP", 
     "l2": "L2",
     "l2_er": "L2-ER",
-    "er": "ER"
+    "er": "ER",
+    "laynorm_l2": "LayerNorm-L2",
+    "spectral_reg": "Spectral"
 }
 
 FNAME_RE = re.compile(r"hessian_task_(\d+)_(init|end)\.npy$")
@@ -38,46 +42,55 @@ def smooth_epsilon_ranks(epsilon_ranks, sigma=1.0):
 # Dataset configurations
 DATASET_CONFIGS = {
     "imagenet": {
-        "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
-        "default_data_root": Path("/users/kguo32/rl-opt/imagenet/hessian/data"),
+        "default_agents": ["bp", "cbp", "l2", "l2_er", "er", "laynorm_l2", "spectral_reg"],
+        "default_data_root": Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/imagenet/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/imagenet/hessian/plots"),
         "agent_results_map": {
             "bp": "bp_hessian",
-            "cbp": "cbp_hessian", 
+            "cbp": "cbp_hessian",
             "l2": "l2_hessian",
             "l2_er": "l2_er_hessian",
-            "er": "er_hessian"
-        },  # No mapping needed for ImageNet
-        "dataset_name": "ImageNet"
+            "er": "er_hessian",
+            "laynorm_l2": "laynorm_l2_hessian",
+            "spectral_reg": "spectral_reg_hessian",
+        },
+        "dataset_name": "Continual ImageNet",
+        # "optimal_epsilon": 8e-02,
     },
     "permuted_mnist": {
-        "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
+        "default_agents": ["bp", "cbp", "l2", "l2_er", "er", "laynorm_l2", "spectral_reg"],
         "default_data_root": Path("/users/kguo32/rl-opt/permuted_mnist/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/permuted_mnist/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/permuted_mnist/hessian/plots"),
         "agent_results_map": {
             "bp": "bp_hessian_fix_lr",
-            "cbp": "cbp_hessian_fix_lr", 
+            "cbp": "cbp_hessian_fix_lr",
             "l2": "l2_hessian_fix_lr",
             "l2_er": "l2_er_hessian_fix_lr",
-            "er": "er_hessian_fix_lr"
+            "er": "er_hessian_fix_lr",
+            "laynorm_l2": "laynorm_l2_hessian_fix_lr",
+            "spectral_reg": "spectral_reg_hessian_fix_lr"
         },
-        "dataset_name": "Permuted MNIST"
+        "dataset_name": "Permuted MNIST",
+        # "optimal_epsilon": 2e-02
     },
     "incremental_cifar": {
-        "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
+        "default_agents": ["bp", "cbp", "l2", "l2_er", "er", "layernorm_l2", "spectral_reg"],
         "default_data_root": Path("/users/kguo32/rl-opt/incremental_cifar/hessian/data"),
         "default_results_root": Path("/users/kguo32/rl-opt/incremental_cifar/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/incremental_cifar/hessian/plots"),
         "agent_results_map": {
             "bp": "bp_hessian",
-            "cbp": "cbp_hessian", 
+            "cbp": "cbp_hessian",
             "l2": "l2_hessian",
             "l2_er": "l2_er_hessian",
-            "er": "er_hessian"
-        },  # No mapping needed for incremental CIFAR
-        "dataset_name": "Incremental CIFAR"
+            "er": "er_hessian",
+            "layernorm_l2": "layernorm_l2",
+            "spectral_reg": "spec_reg_hessian",
+        },
+        "dataset_name": "Incremental CIFAR",
+        # "optimal_epsilon": 4e-02
     }
 }
 
@@ -197,6 +210,10 @@ def find_optimal_epsilon(data_root, results_root, agents, mode, phase, agent_res
         for agent in agents:
             agent_dir = data_root / agent
             tasks, seed_matrix = gather_agent_seed_matrix(agent_dir, mode, phase, eps, dataset_type)
+            # For incremental CIFAR, only use the first 10 tasks to pick epsilon
+            if dataset_type == "incremental_cifar" and len(tasks) > 10:
+                tasks = tasks[:10]
+                seed_matrix = seed_matrix[:, :10]
             
             results_agent = agent_results_map.get(agent, agent)
             results_dir = results_root / results_agent
@@ -209,10 +226,6 @@ def find_optimal_epsilon(data_root, results_root, agents, mode, phase, agent_res
                 task_accuracy = np.full(len(tasks), np.nan)
                 task_accuracy[:len(accuracy)] = accuracy
             
-            # For incremental CIFAR, also limit accuracy to first 10 tasks
-            if dataset_type == "incremental_cifar" and len(task_accuracy) > 10:
-                task_accuracy = task_accuracy[:10]
-            
             # For incremental CIFAR, calculate difference from RESET baseline
             if dataset_type == "incremental_cifar" and reset_accuracy is not None:
                 if len(reset_accuracy) >= len(tasks):
@@ -220,11 +233,6 @@ def find_optimal_epsilon(data_root, results_root, agents, mode, phase, agent_res
                 else:
                     reset_task_accuracy = np.full(len(tasks), np.nan)
                     reset_task_accuracy[:len(reset_accuracy)] = reset_accuracy
-                
-                # Also limit RESET baseline to first 10 tasks
-                if len(reset_task_accuracy) > 10:
-                    reset_task_accuracy = reset_task_accuracy[:10]
-                    
                 task_accuracy = task_accuracy - reset_task_accuracy
             
             # Collect data points for this agent
@@ -307,10 +315,13 @@ def main():
     if args.epsilon is not None:
         epsilon_to_use = args.epsilon
         print(f"Using fixed epsilon: {epsilon_to_use}")
+    elif "optimal_epsilon" in config:
+        epsilon_to_use = config["optimal_epsilon"]
+        print(f"Using configured optimal epsilon: {epsilon_to_use:.2e}")
     else:
         epsilon_range = (args.epsilon_min, args.epsilon_max)
         epsilon_to_use, best_r_squared = find_optimal_epsilon(
-            data_root, results_root, agents, args.mode, args.phase, 
+            data_root, results_root, agents, args.mode, args.phase,
             agent_results_map, dataset_type, epsilon_range, args.num_epsilons
         )
         print(f"Using optimal epsilon: {epsilon_to_use:.2e} (R² = {best_r_squared:.4f})")

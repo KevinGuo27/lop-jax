@@ -43,8 +43,8 @@ def smooth_epsilon_ranks(epsilon_ranks, sigma=1.0):
 DATASET_CONFIGS = {
     "imagenet": {
         "default_agents": ["bp", "cbp", "l2", "l2_er", "er"],
-        "default_data_root": Path("/users/kguo32/rl-opt/imagenet/hessian/data"),
-        "default_results_root": Path("/users/kguo32/rl-opt/imagenet/results"),
+        "default_data_root": Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/data"),
+        "default_results_root": Path("/users/kguo32/data/kguo32/lop/imagenet/results"),
         "default_out_dir": Path("/users/kguo32/rl-opt/imagenet/hessian/plots"),
         "agent_results_map": {
             "bp": "bp_hessian",

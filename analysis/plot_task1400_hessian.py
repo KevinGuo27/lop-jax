@@ -4,7 +4,7 @@ from pathlib import Path
 
 def load_hessian_data(agent_name, task_num, seed='2025', at_init=True):
     """Load hessian data from the .npy file"""
-    data_dir = Path("/users/kguo32/rl-opt/imagenet/hessian/data") / agent_name / seed
+    data_dir = Path("/users/kguo32/data/kguo32/lop/imagenet/hessian/data") / agent_name / seed
     phase = 'init' if at_init else 'end'
     fname = data_dir / f"hessian_task_{task_num}_{phase}.npy"
     
