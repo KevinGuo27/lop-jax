@@ -1,6 +1,6 @@
 # Spectral Collapse Drives Loss of Plasticity in Deep Continual Learning
 
-Code for **"Spectral Collapse Drives Loss of Plasticity in Deep Continual Learning"** (ICML 2026, PMLR 306).
+Code for **"Spectral Collapse Drives Loss of Plasticity in Deep Continual Learning"** (ICML 2026).
 
 **Authors:** Arjun Prakash\*, Naicheng He\*, Kaicheng Guo\*, Saket Tiwari, Tyrone Serapio, Ruo Yu Tao, Amy Greenwald, George Konidaris
 
@@ -127,8 +127,6 @@ Each benchmark contains: `train_*.py` (training), `config.py` (hyperparameters),
   title     = {Spectral Collapse Drives Loss of Plasticity in Deep Continual Learning},
   author    = {Prakash, Arjun and He, Naicheng and Guo, Kaicheng and Tiwari, Saket and Serapio, Tyrone and Tao, Ruo Yu and Greenwald, Amy and Konidaris, George},
   booktitle = {Proceedings of the 43rd International Conference on Machine Learning},
-  series    = {PMLR},
-  volume    = {306},
   year      = {2026}
 }
 ```
